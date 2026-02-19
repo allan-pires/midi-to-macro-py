@@ -18,14 +18,21 @@ from midi_to_macro.theme import (
     ACCENT,
     ACCENT_HOVER,
     BG,
+    BORDER,
     BTN_PAD,
     CARD,
     ENTRY_BG,
     ENTRY_FG,
     FONT_FAMILY,
     FG,
+    HINT_FONT,
+    HINT_WRAP,
     LABEL_FONT,
+    LISTBOX_MIN_ROWS,
+    OS_LISTBOX_MIN_ROWS,
     PAD,
+    SMALL_FONT,
+    SMALL_PAD,
     SUBTLE,
     TITLE_FONT,
 )
@@ -46,26 +53,52 @@ class App:
         root.option_add('*selectBackground', ACCENT)
         root.option_add('*selectForeground', BG)
 
+        # ttk styles (clam for full control)
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure('TNotebook', background=BG)
+        style.configure(
+            'TNotebook.Tab',
+            background=SUBTLE, foreground=FG, padding=[SMALL_PAD + 4, SMALL_PAD]
+        )
+        style.map(
+            'TNotebook.Tab',
+            background=[('selected', CARD)],
+            padding=[('selected', [PAD + 4, SMALL_PAD + 2])],
+        )
+        style.configure(
+            'Playback.Horizontal.TProgressbar',
+            troughcolor=SUBTLE,
+            background=ACCENT,
+            darkcolor=ACCENT,
+            lightcolor=ACCENT,
+            bordercolor=BORDER,
+        )
+        style.configure(
+            'TCombobox',
+            fieldbackground=ENTRY_BG,
+            foreground=ENTRY_FG,
+            background=SUBTLE,
+            arrowcolor=FG,
+        )
+        style.map('TCombobox', fieldbackground=[('readonly', ENTRY_BG)])
+
         self.folder_path = ''
         self.tempo = tk.DoubleVar(value=1.0)
         self.transpose = tk.IntVar(value=0)
 
         # Header
         header = tk.Frame(root, bg=BG)
-        header.pack(fill='x', padx=PAD, pady=(PAD, 4))
+        header.pack(fill='x', padx=PAD, pady=(PAD, SMALL_PAD))
         tk.Label(header, text='MIDI → .mcr', font=TITLE_FONT, fg=ACCENT, bg=BG).pack(anchor='w')
         tk.Label(
             header, text='Convert MIDI to macro and play with keyboard',
-            font=(FONT_FAMILY, 9), fg=SUBTLE, bg=BG
+            font=SMALL_FONT, fg=SUBTLE, bg=BG
         ).pack(anchor='w')
 
         # Notebook: File tab + Online Sequencer tab
         notebook = ttk.Notebook(root)
         notebook.pack(fill='both', expand=True, padx=PAD, pady=(0, PAD))
-        style = ttk.Style()
-        style.configure('TNotebook', background=BG)
-        style.configure('TNotebook.Tab', background=SUBTLE, foreground=FG, padding=[PAD, 6])
-        style.map('TNotebook.Tab', background=[('selected', CARD)])
 
         # ---- Tab 1: File ----
         file_tab = tk.Frame(notebook, bg=BG)
@@ -76,14 +109,13 @@ class App:
             file_tab, text='  File  ', font=LABEL_FONT,
             fg=SUBTLE, bg=CARD, labelanchor='n'
         )
-        file_frame.pack(fill='x', padx=PAD, pady=(0, PAD))
+        file_frame.pack(fill='both', expand=True, padx=PAD, pady=(0, PAD))
         file_inner = tk.Frame(file_frame, bg=CARD)
-        file_inner.pack(fill='x', padx=PAD, pady=(4, PAD))
+        file_inner.pack(fill='both', expand=True, padx=PAD, pady=(SMALL_PAD, PAD))
         tk.Label(file_inner, text='Folder', font=LABEL_FONT, fg=FG, bg=CARD).grid(
-            row=0, column=0, sticky='w', pady=(0, 4)
-        )
+            row=0, column=0, sticky='w', pady=(0, SMALL_PAD))
         self.folder_label = tk.Label(
-            file_inner, text='No folder selected', font=(FONT_FAMILY, 9),
+            file_inner, text='No folder selected', font=SMALL_FONT,
             fg=SUBTLE, bg=CARD, anchor='w'
         )
         self.folder_label.grid(row=1, column=0, sticky='ew', padx=(0, 8))
@@ -98,15 +130,14 @@ class App:
         open_folder_btn.bind('<Enter>', lambda e: open_folder_btn.configure(bg=ACCENT))
         open_folder_btn.bind('<Leave>', lambda e: open_folder_btn.configure(bg=SUBTLE))
         tk.Label(file_inner, text='MIDI file', font=LABEL_FONT, fg=FG, bg=CARD).grid(
-            row=2, column=0, sticky='w', pady=(8, 4)
-        )
+            row=2, column=0, sticky='w', pady=(PAD, SMALL_PAD))
         list_frame = tk.Frame(file_inner, bg=CARD)
-        list_frame.grid(row=3, column=0, columnspan=2, sticky='nsew', pady=(0, 4))
+        list_frame.grid(row=3, column=0, columnspan=2, sticky='nsew', pady=(0, SMALL_PAD))
         file_inner.rowconfigure(3, weight=1)
         scrollbar = tk.Scrollbar(list_frame, bg=SUBTLE)
         scrollbar.pack(side='right', fill='y')
         self.file_listbox = tk.Listbox(
-            list_frame, height=12, font=LABEL_FONT,
+            list_frame, height=LISTBOX_MIN_ROWS, font=LABEL_FONT,
             bg=ENTRY_BG, fg=ENTRY_FG, selectbackground=ACCENT, selectforeground=BG,
             relief='flat', highlightthickness=0, yscrollcommand=scrollbar.set
         )
@@ -120,11 +151,10 @@ class App:
         )
         opts_frame.pack(fill='x', padx=PAD, pady=(0, PAD))
         opts_inner = tk.Frame(opts_frame, bg=CARD)
-        opts_inner.pack(fill='x', padx=PAD, pady=(4, PAD))
+        opts_inner.pack(fill='x', padx=PAD, pady=(SMALL_PAD, PAD))
         rb_opts = {'font': LABEL_FONT, 'fg': FG, 'bg': CARD, 'activeforeground': FG, 'activebackground': CARD, 'selectcolor': ENTRY_BG}
         tk.Label(opts_inner, text='Tempo ×', font=LABEL_FONT, fg=FG, bg=CARD).grid(
-            row=0, column=0, sticky='w', pady=(0, 6)
-        )
+            row=0, column=0, sticky='w', pady=(0, SMALL_PAD))
         tempo_row = tk.Frame(opts_inner, bg=CARD)
         tempo_row.grid(row=1, column=0, sticky='w')
         for val, label in [(0.5, '0.5×'), (0.75, '0.75×'), (1.0, '1×'), (1.5, '1.5×')]:
@@ -132,10 +162,9 @@ class App:
                 tempo_row, text=label, variable=self.tempo, value=val, **rb_opts
             ).pack(side='left', padx=(0, 12))
         tk.Label(opts_inner, text='Transpose', font=LABEL_FONT, fg=FG, bg=CARD).grid(
-            row=0, column=1, sticky='w', padx=(24, 0), pady=(0, 6)
-        )
+            row=0, column=1, sticky='w', padx=(PAD * 2, 0), pady=(0, SMALL_PAD))
         transpose_row = tk.Frame(opts_inner, bg=CARD)
-        transpose_row.grid(row=1, column=1, sticky='w', padx=(24, 0))
+        transpose_row.grid(row=1, column=1, sticky='w', padx=(PAD * 2, 0))
         for val, label in [(-2, '−2'), (-1, '−1'), (0, '0'), (1, '+1'), (2, '+2')]:
             tk.Radiobutton(
                 transpose_row, text=label, variable=self.transpose, value=val, **rb_opts
@@ -143,7 +172,7 @@ class App:
 
         # Actions
         actions = tk.Frame(file_tab, bg=BG)
-        actions.pack(fill='x', padx=PAD, pady=(0, PAD))
+        actions.pack(fill='x', padx=PAD, pady=(0, SMALL_PAD))
         export_btn = tk.Button(
             actions, text='Export .mcr', command=self.export,
             font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
@@ -180,17 +209,7 @@ class App:
 
         # Progress bar (shown during playback)
         self.progress_frame = tk.Frame(file_tab, bg=BG)
-        self.progress_frame.pack(fill='x', padx=PAD, pady=(4, 0))
-        style = ttk.Style()
-        style.theme_use('clam')
-        style.configure(
-            'Playback.Horizontal.TProgressbar',
-            troughcolor=SUBTLE,
-            background=ACCENT,
-            darkcolor=ACCENT,
-            lightcolor=ACCENT,
-            bordercolor=CARD,
-        )
+        self.progress_frame.pack(fill='x', padx=PAD, pady=(SMALL_PAD, 0))
         self.progress_bar = ttk.Progressbar(
             self.progress_frame, style='Playback.Horizontal.TProgressbar',
             mode='determinate', maximum=100, value=0
@@ -199,11 +218,11 @@ class App:
 
         # Status
         status_frame = tk.Frame(file_tab, bg=BG)
-        status_frame.pack(fill='x', padx=PAD, pady=(0, PAD))
+        status_frame.pack(fill='x', padx=PAD, pady=(SMALL_PAD, PAD))
         self.status = tk.Label(
             status_frame,
             text='Ready — focus the game window before playing',
-            font=(FONT_FAMILY, 9), fg=SUBTLE, bg=BG
+            font=SMALL_FONT, fg=SUBTLE, bg=BG
         )
         self.status.pack(anchor='w')
 
@@ -214,7 +233,7 @@ class App:
         os_inner.pack(fill='both', expand=True, padx=PAD, pady=PAD)
         tk.Label(os_inner, text='Sequences (onlinesequencer.net)', font=LABEL_FONT, fg=FG, bg=BG).pack(anchor='w')
         os_toolbar = tk.Frame(os_inner, bg=BG)
-        os_toolbar.pack(fill='x', pady=(4, 8))
+        os_toolbar.pack(fill='x', pady=(SMALL_PAD, PAD))
         tk.Label(os_toolbar, text='Sort:', font=LABEL_FONT, fg=FG, bg=BG).pack(side='left', padx=(0, 6))
         self.os_sort_menu = ttk.Combobox(
             os_toolbar,
@@ -233,15 +252,6 @@ class App:
         load_btn.pack(side='left', padx=(0, 8))
         load_btn.bind('<Enter>', lambda e: load_btn.configure(bg=ACCENT))
         load_btn.bind('<Leave>', lambda e: load_btn.configure(bg=SUBTLE))
-        os_load_btn = tk.Button(
-            os_toolbar, text='Load & play', command=self._load_and_play_sequence,
-            font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
-            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            cursor='hand2'
-        )
-        os_load_btn.pack(side='left', padx=(0, 8))
-        os_load_btn.bind('<Enter>', lambda e: os_load_btn.configure(bg=ACCENT))
-        os_load_btn.bind('<Leave>', lambda e: os_load_btn.configure(bg=SUBTLE))
         os_open_btn = tk.Button(
             os_toolbar, text='Open selected in browser', command=self._open_selected_sequence,
             font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
@@ -252,23 +262,17 @@ class App:
         os_open_btn.bind('<Enter>', lambda e: os_open_btn.configure(bg=ACCENT))
         os_open_btn.bind('<Leave>', lambda e: os_open_btn.configure(bg=SUBTLE))
         os_list_frame = tk.Frame(os_inner, bg=CARD)
-        os_list_frame.pack(fill='both', expand=True, pady=(0, 8))
+        os_list_frame.pack(fill='both', expand=True, pady=(0, PAD))
         os_scroll = tk.Scrollbar(os_list_frame, bg=SUBTLE)
         os_scroll.pack(side='right', fill='y')
         self.os_listbox = tk.Listbox(
-            os_list_frame, font=LABEL_FONT, height=14,
+            os_list_frame, font=LABEL_FONT, height=OS_LISTBOX_MIN_ROWS,
             bg=ENTRY_BG, fg=ENTRY_FG, selectbackground=ACCENT, selectforeground=BG,
             relief='flat', highlightthickness=0, yscrollcommand=os_scroll.set
         )
         self.os_listbox.pack(side='left', fill='both', expand=True)
         self.os_listbox.bind('<Double-Button-1>', lambda e: self._open_selected_sequence())
         os_scroll.config(command=self.os_listbox.yview)
-        self.os_status = tk.Label(
-            os_inner,
-            text='Choose sort and click Load list to show sequences.',
-            font=(FONT_FAMILY, 9), fg=SUBTLE, bg=BG
-        )
-        self.os_status.pack(anchor='w')
         # Options (same as File tab: tempo and transpose are shared)
         os_opts_frame = tk.LabelFrame(
             os_tab, text='  Options  ', font=LABEL_FONT,
@@ -276,10 +280,9 @@ class App:
         )
         os_opts_frame.pack(fill='x', padx=PAD, pady=(0, PAD))
         os_opts_inner = tk.Frame(os_opts_frame, bg=CARD)
-        os_opts_inner.pack(fill='x', padx=PAD, pady=(4, PAD))
+        os_opts_inner.pack(fill='x', padx=PAD, pady=(SMALL_PAD, PAD))
         tk.Label(os_opts_inner, text='Tempo ×', font=LABEL_FONT, fg=FG, bg=CARD).grid(
-            row=0, column=0, sticky='w', pady=(0, 6)
-        )
+            row=0, column=0, sticky='w', pady=(0, SMALL_PAD))
         os_tempo_row = tk.Frame(os_opts_inner, bg=CARD)
         os_tempo_row.grid(row=1, column=0, sticky='w')
         for val, label in [(0.5, '0.5×'), (0.75, '0.75×'), (1.0, '1×'), (1.5, '1.5×')]:
@@ -287,10 +290,9 @@ class App:
                 os_tempo_row, text=label, variable=self.tempo, value=val, **rb_opts
             ).pack(side='left', padx=(0, 12))
         tk.Label(os_opts_inner, text='Transpose', font=LABEL_FONT, fg=FG, bg=CARD).grid(
-            row=0, column=1, sticky='w', padx=(24, 0), pady=(0, 6)
-        )
+            row=0, column=1, sticky='w', padx=(PAD * 2, 0), pady=(0, SMALL_PAD))
         os_transpose_row = tk.Frame(os_opts_inner, bg=CARD)
-        os_transpose_row.grid(row=1, column=1, sticky='w', padx=(24, 0))
+        os_transpose_row.grid(row=1, column=1, sticky='w', padx=(PAD * 2, 0))
         for val, label in [(-2, '−2'), (-1, '−1'), (0, '0'), (1, '+1'), (2, '+2')]:
             tk.Radiobutton(
                 os_transpose_row, text=label, variable=self.transpose, value=val, **rb_opts
@@ -298,7 +300,7 @@ class App:
         # OS tab: actions (Export .mcr, Stop), progress bar (same style as File tab)
         self._os_last_midi_path: str | None = None
         os_actions = tk.Frame(os_tab, bg=BG)
-        os_actions.pack(fill='x', padx=PAD, pady=(8, 4))
+        os_actions.pack(fill='x', padx=PAD, pady=(PAD, SMALL_PAD))
         os_export_btn = tk.Button(
             os_actions, text='Export .mcr', command=self._export_os_mcr,
             font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
@@ -308,6 +310,15 @@ class App:
         os_export_btn.pack(side='left', padx=(0, 8))
         os_export_btn.bind('<Enter>', lambda e: os_export_btn.configure(bg=ACCENT))
         os_export_btn.bind('<Leave>', lambda e: os_export_btn.configure(bg=SUBTLE))
+        self.os_play_btn = tk.Button(
+            os_actions, text='▶ Play', command=self._load_and_play_sequence,
+            font=LABEL_FONT, bg=ACCENT, fg=BG, activebackground=ACCENT_HOVER,
+            activeforeground=BG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
+            cursor='hand2'
+        )
+        self.os_play_btn.pack(side='left', padx=(0, 8))
+        self.os_play_btn.bind('<Enter>', lambda e: self.os_play_btn.configure(bg=ACCENT_HOVER))
+        self.os_play_btn.bind('<Leave>', lambda e: self.os_play_btn.configure(bg=ACCENT))
         self.os_stop_btn = tk.Button(
             os_actions, text='Stop', command=self.stop, state='disabled',
             font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
@@ -324,17 +335,31 @@ class App:
         self.os_stop_btn.bind('<Enter>', _os_stop_enter)
         self.os_stop_btn.bind('<Leave>', _os_stop_leave)
         os_progress_frame = tk.Frame(os_tab, bg=BG)
-        os_progress_frame.pack(fill='x', padx=PAD, pady=(4, PAD))
+        os_progress_frame.pack(fill='x', padx=PAD, pady=(SMALL_PAD, 0))
         self.os_progress_bar = ttk.Progressbar(
             os_progress_frame, style='Playback.Horizontal.TProgressbar',
             mode='determinate', maximum=100, value=0
         )
         self.os_progress_bar.pack(fill='x')
+        # Status (under progress bar, like File tab)
+        os_status_frame = tk.Frame(os_tab, bg=BG)
+        os_status_frame.pack(fill='x', padx=PAD, pady=(SMALL_PAD, PAD))
+        self.os_status = tk.Label(
+            os_status_frame,
+            text='Choose sort and click Load list to show sequences.',
+            font=SMALL_FONT, fg=SUBTLE, bg=BG
+        )
+        self.os_status.pack(anchor='w')
         tk.Label(
-            os_inner,
-            text='Load & play: downloads the sequence as MIDI and plays it (no browser). Export .mcr after loading to save the macro file.',
-            font=(FONT_FAMILY, 8), fg=SUBTLE, bg=BG, wraplength=400, justify='left'
-        ).pack(anchor='w', pady=(4, 0))
+            os_status_frame,
+            text='Ready — focus the game window before playing',
+            font=SMALL_FONT, fg=SUBTLE, bg=BG
+        ).pack(anchor='w')
+        tk.Label(
+            os_status_frame,
+            text='Play downloads the sequence as MIDI and plays it. Export .mcr after loading to save the macro file.',
+            font=HINT_FONT, fg=SUBTLE, bg=BG, wraplength=HINT_WRAP, justify='left'
+        ).pack(anchor='w', pady=(SMALL_PAD, 0))
 
     def _load_sequences(self):
         label = (self.os_sort_menu.get() or 'Newest').strip()
@@ -417,6 +442,7 @@ class App:
         focus_process_window('wwm.exe')
         self.playing = True
         self.play_btn.config(state='disabled')
+        self.os_play_btn.config(state='disabled')
         self.stop_btn.config(state='normal')
         self.os_stop_btn.config(state='normal')
         self.status.config(text='Playing… (focus game window)')
@@ -433,7 +459,7 @@ class App:
         if not path or not os.path.isfile(path):
             messagebox.showwarning(
                 'Nothing to export',
-                'Load & play a sequence first so we have a MIDI file to export.'
+                'Play a sequence first so we have a MIDI file to export.'
             )
             return
         try:
@@ -515,6 +541,7 @@ class App:
         focus_process_window('wwm.exe')
         self.playing = True
         self.play_btn.config(state='disabled')
+        self.os_play_btn.config(state='disabled')
         self.stop_btn.config(state='normal')
         self.status.config(text='Playing... (focus game window)')
         threading.Thread(
@@ -536,6 +563,7 @@ class App:
         self.os_progress_bar['value'] = self.os_progress_bar['maximum']
         if getattr(self, '_os_playing_path', None):
             self._os_playing_path = None
+            self.root.after(0, lambda: self.os_play_btn.config(state='normal'))
             self.root.after(0, lambda: self.os_stop_btn.config(state='disabled'))
             self.root.after(0, lambda: self.os_status.config(text='Finished playing.'))
 
@@ -543,6 +571,7 @@ class App:
         self.playing = False
         self.status.config(text='Stopped')
         self.play_btn.config(state='normal')
+        self.os_play_btn.config(state='normal')
         self.stop_btn.config(state='disabled')
         self.os_stop_btn.config(state='disabled')
 
@@ -564,5 +593,6 @@ class App:
             self.root.after(0, self._progress_done)
             self.playing = False
             self.root.after(0, lambda: self.play_btn.config(state='normal'))
+            self.root.after(0, lambda: self.os_play_btn.config(state='normal'))
             self.root.after(0, lambda: self.stop_btn.config(state='disabled'))
             self.root.after(0, lambda: self.os_stop_btn.config(state='disabled'))
