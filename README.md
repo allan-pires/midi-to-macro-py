@@ -89,3 +89,4 @@ The executable requires Administrator privileges to send keyboard input to games
 - Ensure the file is a valid standard MIDI file (.mid or .midi)
 - Check that all tracks are properly formatted
 
+

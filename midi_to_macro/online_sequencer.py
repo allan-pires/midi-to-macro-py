@@ -1,9 +1,11 @@
-"""Online Sequencer (onlinesequencer.net) integration: fetch sequence list, open in browser."""
+"""Online Sequencer (onlinesequencer.net) integration: fetch list, open in browser, download MIDI."""
 
 import html as html_module
 import re
 import urllib.request
 import webbrowser
+
+from midi_to_macro.os_proto import download_sequence_midi as _download_sequence_midi
 
 BASE = "https://onlinesequencer.net"
 SEQUENCES = f"{BASE}/sequences"
@@ -76,3 +78,12 @@ def open_newest() -> None:
 def open_popular() -> None:
     """Open sequences sorted by popular."""
     webbrowser.open(SEQUENCES_POPULAR)
+
+
+def download_sequence_midi(
+    sequence_id: str,
+    bpm: float = 110,
+    timeout: float = 15,
+) -> str:
+    """Download a sequence by ID and convert to a temporary MIDI file. Returns path to .mid file."""
+    return _download_sequence_midi(sequence_id, bpm=bpm, timeout=timeout)

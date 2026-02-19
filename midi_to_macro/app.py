@@ -10,6 +10,7 @@ from midi_to_macro import midi, playback
 from midi_to_macro.online_sequencer import (
     fetch_sequences,
     open_sequence,
+    download_sequence_midi,
     SORT_OPTIONS,
 )
 from midi_to_macro.window_focus import focus_process_window
@@ -126,7 +127,7 @@ class App:
         )
         tempo_row = tk.Frame(opts_inner, bg=CARD)
         tempo_row.grid(row=1, column=0, sticky='w')
-        for val, label in [(0.5, '0.5×'), (1.0, '1×'), (1.5, '1.5×'), (2.0, '2×')]:
+        for val, label in [(0.5, '0.5×'), (0.75, '0.75×'), (1.0, '1×'), (1.5, '1.5×')]:
             tk.Radiobutton(
                 tempo_row, text=label, variable=self.tempo, value=val, **rb_opts
             ).pack(side='left', padx=(0, 12))
@@ -232,6 +233,15 @@ class App:
         load_btn.pack(side='left', padx=(0, 8))
         load_btn.bind('<Enter>', lambda e: load_btn.configure(bg=ACCENT))
         load_btn.bind('<Leave>', lambda e: load_btn.configure(bg=SUBTLE))
+        os_load_btn = tk.Button(
+            os_toolbar, text='Load & play', command=self._load_and_play_sequence,
+            font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
+            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
+            cursor='hand2'
+        )
+        os_load_btn.pack(side='left', padx=(0, 8))
+        os_load_btn.bind('<Enter>', lambda e: os_load_btn.configure(bg=ACCENT))
+        os_load_btn.bind('<Leave>', lambda e: os_load_btn.configure(bg=SUBTLE))
         os_open_btn = tk.Button(
             os_toolbar, text='Open selected in browser', command=self._open_selected_sequence,
             font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
@@ -259,9 +269,70 @@ class App:
             font=(FONT_FAMILY, 9), fg=SUBTLE, bg=BG
         )
         self.os_status.pack(anchor='w')
+        # Options (same as File tab: tempo and transpose are shared)
+        os_opts_frame = tk.LabelFrame(
+            os_tab, text='  Options  ', font=LABEL_FONT,
+            fg=SUBTLE, bg=CARD, labelanchor='n'
+        )
+        os_opts_frame.pack(fill='x', padx=PAD, pady=(0, PAD))
+        os_opts_inner = tk.Frame(os_opts_frame, bg=CARD)
+        os_opts_inner.pack(fill='x', padx=PAD, pady=(4, PAD))
+        tk.Label(os_opts_inner, text='Tempo ×', font=LABEL_FONT, fg=FG, bg=CARD).grid(
+            row=0, column=0, sticky='w', pady=(0, 6)
+        )
+        os_tempo_row = tk.Frame(os_opts_inner, bg=CARD)
+        os_tempo_row.grid(row=1, column=0, sticky='w')
+        for val, label in [(0.5, '0.5×'), (0.75, '0.75×'), (1.0, '1×'), (1.5, '1.5×')]:
+            tk.Radiobutton(
+                os_tempo_row, text=label, variable=self.tempo, value=val, **rb_opts
+            ).pack(side='left', padx=(0, 12))
+        tk.Label(os_opts_inner, text='Transpose', font=LABEL_FONT, fg=FG, bg=CARD).grid(
+            row=0, column=1, sticky='w', padx=(24, 0), pady=(0, 6)
+        )
+        os_transpose_row = tk.Frame(os_opts_inner, bg=CARD)
+        os_transpose_row.grid(row=1, column=1, sticky='w', padx=(24, 0))
+        for val, label in [(-2, '−2'), (-1, '−1'), (0, '0'), (1, '+1'), (2, '+2')]:
+            tk.Radiobutton(
+                os_transpose_row, text=label, variable=self.transpose, value=val, **rb_opts
+            ).pack(side='left', padx=(0, 10))
+        # OS tab: actions (Export .mcr, Stop), progress bar (same style as File tab)
+        self._os_last_midi_path: str | None = None
+        os_actions = tk.Frame(os_tab, bg=BG)
+        os_actions.pack(fill='x', padx=PAD, pady=(8, 4))
+        os_export_btn = tk.Button(
+            os_actions, text='Export .mcr', command=self._export_os_mcr,
+            font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
+            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
+            cursor='hand2'
+        )
+        os_export_btn.pack(side='left', padx=(0, 8))
+        os_export_btn.bind('<Enter>', lambda e: os_export_btn.configure(bg=ACCENT))
+        os_export_btn.bind('<Leave>', lambda e: os_export_btn.configure(bg=SUBTLE))
+        self.os_stop_btn = tk.Button(
+            os_actions, text='Stop', command=self.stop, state='disabled',
+            font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
+            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
+            cursor='hand2'
+        )
+        self.os_stop_btn.pack(side='left')
+        def _os_stop_enter(e):
+            if self.os_stop_btn['state'] == 'normal':
+                self.os_stop_btn.configure(bg=ACCENT)
+        def _os_stop_leave(e):
+            if self.os_stop_btn['state'] == 'normal':
+                self.os_stop_btn.configure(bg=SUBTLE)
+        self.os_stop_btn.bind('<Enter>', _os_stop_enter)
+        self.os_stop_btn.bind('<Leave>', _os_stop_leave)
+        os_progress_frame = tk.Frame(os_tab, bg=BG)
+        os_progress_frame.pack(fill='x', padx=PAD, pady=(4, PAD))
+        self.os_progress_bar = ttk.Progressbar(
+            os_progress_frame, style='Playback.Horizontal.TProgressbar',
+            mode='determinate', maximum=100, value=0
+        )
+        self.os_progress_bar.pack(fill='x')
         tk.Label(
             os_inner,
-            text='To use as MIDI: open the sequence in browser → Export MIDI → save file → use File tab.',
+            text='Load & play: downloads the sequence as MIDI and plays it (no browser). Export .mcr after loading to save the macro file.',
             font=(FONT_FAMILY, 8), fg=SUBTLE, bg=BG, wraplength=400, justify='left'
         ).pack(anchor='w', pady=(4, 0))
 
@@ -307,6 +378,79 @@ class App:
         sid, _ = self.os_sequences[idx]
         open_sequence(sid)
         self.os_status.config(text=f'Opened sequence {sid} in browser.')
+
+    def _load_and_play_sequence(self):
+        """Download selected sequence as MIDI and start playback (no browser)."""
+        if not playback.KEYBOARD_AVAILABLE:
+            messagebox.showerror(
+                'Missing dependency',
+                'pynput library not available. Install with: pip install pynput'
+            )
+            return
+        sel = self.os_listbox.curselection()
+        if not sel or not self.os_sequences:
+            messagebox.showwarning('No selection', 'Load list and select a sequence first.')
+            return
+        idx = sel[0]
+        if idx >= len(self.os_sequences):
+            return
+        sid, title = self.os_sequences[idx]
+        self.os_status.config(text=f'Downloading sequence {sid}…')
+        tempo = self.tempo.get()
+        transpose = self.transpose.get()
+
+        def do_load_and_play():
+            try:
+                path = download_sequence_midi(sid, bpm=110, timeout=20)
+                self.root.after(0, lambda: self._os_start_playback(path, tempo, transpose))
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror('Load failed', str(e)))
+                self.root.after(0, lambda: self.os_status.config(text='Load failed.'))
+
+        threading.Thread(target=do_load_and_play, daemon=True).start()
+
+    def _os_start_playback(self, path: str, tempo_multiplier: float, transpose: int):
+        """Start playback for an OS-downloaded MIDI path (called on main thread)."""
+        self._os_last_midi_path = path
+        self.os_status.config(text='Playing… (focus game window)')
+        self.root.focus_set()
+        focus_process_window('wwm.exe')
+        self.playing = True
+        self.play_btn.config(state='disabled')
+        self.stop_btn.config(state='normal')
+        self.os_stop_btn.config(state='normal')
+        self.status.config(text='Playing… (focus game window)')
+        self._os_playing_path = path
+        threading.Thread(
+            target=self._play_thread,
+            args=(path, tempo_multiplier, transpose),
+            daemon=True
+        ).start()
+
+    def _export_os_mcr(self):
+        """Export the last loaded Online Sequencer MIDI to .mcr (from current tab)."""
+        path = getattr(self, '_os_last_midi_path', None)
+        if not path or not os.path.isfile(path):
+            messagebox.showwarning(
+                'Nothing to export',
+                'Load & play a sequence first so we have a MIDI file to export.'
+            )
+            return
+        try:
+            events = midi.parse_midi(
+                path,
+                tempo_multiplier=self.tempo.get(),
+                transpose=self.transpose.get(),
+            )
+            out = filedialog.asksaveasfilename(
+                defaultextension='.mcr', filetypes=[('MCR', '*.mcr')]
+            )
+            if not out:
+                return
+            midi.export_mcr(out, events)
+            self.os_status.config(text=f'Exported {out}')
+        except Exception as e:
+            messagebox.showerror('Error', str(e))
 
     def open_folder(self):
         folder = filedialog.askdirectory(title='Select folder with MIDI files')
@@ -384,15 +528,23 @@ class App:
             return
         self.progress_bar['maximum'] = total
         self.progress_bar['value'] = current
+        self.os_progress_bar['maximum'] = total
+        self.os_progress_bar['value'] = current
 
     def _progress_done(self):
         self.progress_bar['value'] = self.progress_bar['maximum']
+        self.os_progress_bar['value'] = self.os_progress_bar['maximum']
+        if getattr(self, '_os_playing_path', None):
+            self._os_playing_path = None
+            self.root.after(0, lambda: self.os_stop_btn.config(state='disabled'))
+            self.root.after(0, lambda: self.os_status.config(text='Finished playing.'))
 
     def stop(self):
         self.playing = False
         self.status.config(text='Stopped')
         self.play_btn.config(state='normal')
         self.stop_btn.config(state='disabled')
+        self.os_stop_btn.config(state='disabled')
 
     def _play_thread(self, path, tempo_multiplier, transpose):
         try:
@@ -413,3 +565,4 @@ class App:
             self.playing = False
             self.root.after(0, lambda: self.play_btn.config(state='normal'))
             self.root.after(0, lambda: self.stop_btn.config(state='disabled'))
+            self.root.after(0, lambda: self.os_stop_btn.config(state='disabled'))
