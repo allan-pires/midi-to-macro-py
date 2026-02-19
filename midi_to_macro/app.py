@@ -7,6 +7,11 @@ from tkinter import filedialog, messagebox
 from tkinter import ttk
 
 from midi_to_macro import midi, playback
+from midi_to_macro.online_sequencer import (
+    fetch_sequences,
+    open_sequence,
+    SORT_OPTIONS,
+)
 from midi_to_macro.window_focus import focus_process_window
 from midi_to_macro.theme import (
     ACCENT,
@@ -53,9 +58,21 @@ class App:
             font=(FONT_FAMILY, 9), fg=SUBTLE, bg=BG
         ).pack(anchor='w')
 
+        # Notebook: File tab + Online Sequencer tab
+        notebook = ttk.Notebook(root)
+        notebook.pack(fill='both', expand=True, padx=PAD, pady=(0, PAD))
+        style = ttk.Style()
+        style.configure('TNotebook', background=BG)
+        style.configure('TNotebook.Tab', background=SUBTLE, foreground=FG, padding=[PAD, 6])
+        style.map('TNotebook.Tab', background=[('selected', CARD)])
+
+        # ---- Tab 1: File ----
+        file_tab = tk.Frame(notebook, bg=BG)
+        notebook.add(file_tab, text='  File  ')
+
         # File section: folder + list of .mid files
         file_frame = tk.LabelFrame(
-            root, text='  File  ', font=LABEL_FONT,
+            file_tab, text='  File  ', font=LABEL_FONT,
             fg=SUBTLE, bg=CARD, labelanchor='n'
         )
         file_frame.pack(fill='x', padx=PAD, pady=(0, PAD))
@@ -97,7 +114,7 @@ class App:
 
         # Options section (radio buttons)
         opts_frame = tk.LabelFrame(
-            root, text='  Options  ', font=LABEL_FONT,
+            file_tab, text='  Options  ', font=LABEL_FONT,
             fg=SUBTLE, bg=CARD, labelanchor='n'
         )
         opts_frame.pack(fill='x', padx=PAD, pady=(0, PAD))
@@ -124,7 +141,7 @@ class App:
             ).pack(side='left', padx=(0, 10))
 
         # Actions
-        actions = tk.Frame(root, bg=BG)
+        actions = tk.Frame(file_tab, bg=BG)
         actions.pack(fill='x', padx=PAD, pady=(0, PAD))
         export_btn = tk.Button(
             actions, text='Export .mcr', command=self.export,
@@ -161,7 +178,7 @@ class App:
         self.stop_btn.bind('<Leave>', _stop_leave)
 
         # Progress bar (shown during playback)
-        self.progress_frame = tk.Frame(root, bg=BG)
+        self.progress_frame = tk.Frame(file_tab, bg=BG)
         self.progress_frame.pack(fill='x', padx=PAD, pady=(4, 0))
         style = ttk.Style()
         style.theme_use('clam')
@@ -180,7 +197,7 @@ class App:
         self.progress_bar.pack(fill='x')
 
         # Status
-        status_frame = tk.Frame(root, bg=BG)
+        status_frame = tk.Frame(file_tab, bg=BG)
         status_frame.pack(fill='x', padx=PAD, pady=(0, PAD))
         self.status = tk.Label(
             status_frame,
@@ -188,6 +205,108 @@ class App:
             font=(FONT_FAMILY, 9), fg=SUBTLE, bg=BG
         )
         self.status.pack(anchor='w')
+
+        # ---- Tab 2: Online Sequencer ----
+        os_tab = tk.Frame(notebook, bg=BG)
+        notebook.add(os_tab, text='  Online Sequencer  ')
+        os_inner = tk.Frame(os_tab, bg=BG)
+        os_inner.pack(fill='both', expand=True, padx=PAD, pady=PAD)
+        tk.Label(os_inner, text='Sequences (onlinesequencer.net)', font=LABEL_FONT, fg=FG, bg=BG).pack(anchor='w')
+        os_toolbar = tk.Frame(os_inner, bg=BG)
+        os_toolbar.pack(fill='x', pady=(4, 8))
+        tk.Label(os_toolbar, text='Sort:', font=LABEL_FONT, fg=FG, bg=BG).pack(side='left', padx=(0, 6))
+        self.os_sort_menu = ttk.Combobox(
+            os_toolbar,
+            values=[label for _, label in SORT_OPTIONS],
+            state='readonly', width=14, font=LABEL_FONT
+        )
+        self.os_sort_menu.pack(side='left', padx=(0, 8))
+        self.os_sort_menu.set('Newest')
+        self.os_sequences: list[tuple[str, str]] = []
+        load_btn = tk.Button(
+            os_toolbar, text='Load list', command=self._load_sequences,
+            font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
+            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
+            cursor='hand2'
+        )
+        load_btn.pack(side='left', padx=(0, 8))
+        load_btn.bind('<Enter>', lambda e: load_btn.configure(bg=ACCENT))
+        load_btn.bind('<Leave>', lambda e: load_btn.configure(bg=SUBTLE))
+        os_open_btn = tk.Button(
+            os_toolbar, text='Open selected in browser', command=self._open_selected_sequence,
+            font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
+            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
+            cursor='hand2'
+        )
+        os_open_btn.pack(side='left')
+        os_open_btn.bind('<Enter>', lambda e: os_open_btn.configure(bg=ACCENT))
+        os_open_btn.bind('<Leave>', lambda e: os_open_btn.configure(bg=SUBTLE))
+        os_list_frame = tk.Frame(os_inner, bg=CARD)
+        os_list_frame.pack(fill='both', expand=True, pady=(0, 8))
+        os_scroll = tk.Scrollbar(os_list_frame, bg=SUBTLE)
+        os_scroll.pack(side='right', fill='y')
+        self.os_listbox = tk.Listbox(
+            os_list_frame, font=LABEL_FONT, height=14,
+            bg=ENTRY_BG, fg=ENTRY_FG, selectbackground=ACCENT, selectforeground=BG,
+            relief='flat', highlightthickness=0, yscrollcommand=os_scroll.set
+        )
+        self.os_listbox.pack(side='left', fill='both', expand=True)
+        self.os_listbox.bind('<Double-Button-1>', lambda e: self._open_selected_sequence())
+        os_scroll.config(command=self.os_listbox.yview)
+        self.os_status = tk.Label(
+            os_inner,
+            text='Choose sort and click Load list to show sequences.',
+            font=(FONT_FAMILY, 9), fg=SUBTLE, bg=BG
+        )
+        self.os_status.pack(anchor='w')
+        tk.Label(
+            os_inner,
+            text='To use as MIDI: open the sequence in browser → Export MIDI → save file → use File tab.',
+            font=(FONT_FAMILY, 8), fg=SUBTLE, bg=BG, wraplength=400, justify='left'
+        ).pack(anchor='w', pady=(4, 0))
+
+    def _load_sequences(self):
+        label = (self.os_sort_menu.get() or 'Newest').strip()
+        sort = next((v for v, l in SORT_OPTIONS if l == label), '1')
+        self.os_status.config(text='Loading…')
+        self.os_listbox.delete(0, tk.END)
+        self.os_sequences.clear()
+
+        def do_fetch():
+            try:
+                pairs = fetch_sequences(sort=sort or '1')
+                self.root.after(0, lambda: self._on_sequences_loaded(pairs, None))
+            except Exception as e:
+                self.root.after(0, lambda: self._on_sequences_loaded([], str(e)))
+
+        threading.Thread(target=do_fetch, daemon=True).start()
+
+    def _on_sequences_loaded(self, pairs: list[tuple[str, str]], error: str | None):
+        self.os_sequences.clear()
+        self.os_listbox.delete(0, tk.END)
+        if error:
+            self.os_status.config(text=f'Error: {error}')
+            return
+        for sid, title in pairs:
+            self.os_sequences.append((sid, title))
+            display = f"  {title[:55] + '…' if len(title) > 55 else title}  (ID: {sid})"
+            self.os_listbox.insert(tk.END, display)
+        if pairs:
+            self.os_listbox.selection_set(0)
+            self.os_listbox.see(0)
+        self.os_status.config(text=f'{len(pairs)} sequences loaded.')
+
+    def _open_selected_sequence(self):
+        sel = self.os_listbox.curselection()
+        if not sel or not self.os_sequences:
+            messagebox.showwarning('No selection', 'Load list and select a sequence first.')
+            return
+        idx = sel[0]
+        if idx >= len(self.os_sequences):
+            return
+        sid, _ = self.os_sequences[idx]
+        open_sequence(sid)
+        self.os_status.config(text=f'Opened sequence {sid} in browser.')
 
     def open_folder(self):
         folder = filedialog.askdirectory(title='Select folder with MIDI files')
