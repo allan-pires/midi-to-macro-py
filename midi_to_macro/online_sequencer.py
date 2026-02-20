@@ -2,6 +2,7 @@
 
 import html as html_module
 import re
+import urllib.parse
 import urllib.request
 import webbrowser
 
@@ -41,6 +42,35 @@ def fetch_sequences(sort: str = "1", timeout: float = 15) -> list[tuple[str, str
     for title, sid in blocks:
         title = html_module.unescape(title.strip()) or f"Sequence {sid}"
         result.append((sid, title))
+    return result
+
+
+def search_sequences(
+    query: str,
+    sort: str = "1",
+    timeout: float = 15,
+) -> list[tuple[str, str]]:
+    """Fetch sequences, optionally with server search param, then filter by query in title.
+    Returns [(id, title), ...]. Empty query returns same as fetch_sequences(sort)."""
+    query = (query or "").strip()
+    url = f"{BASE}/sequences?sort={sort}"
+    if query:
+        url += "&search=" + urllib.parse.quote(query, safe="")
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        data = r.read().decode("utf-8", errors="replace")
+    blocks = re.findall(
+        r'<div class="preview" title="([^"]*)"[^>]*>.*?<a href="/(\d+)"',
+        data,
+        re.DOTALL,
+    )
+    result = []
+    for title, sid in blocks:
+        title = html_module.unescape(title.strip()) or f"Sequence {sid}"
+        result.append((sid, title))
+    if query:
+        q = query.lower()
+        result = [(sid, title) for sid, title in result if q in title.lower()]
     return result
 
 

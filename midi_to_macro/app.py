@@ -11,6 +11,7 @@ from midi_to_macro.online_sequencer import (
     fetch_sequences,
     open_sequence,
     download_sequence_midi,
+    search_sequences,
     SORT_OPTIONS,
 )
 from midi_to_macro.window_focus import focus_process_window
@@ -261,6 +262,30 @@ class App:
         os_open_btn.pack(side='left')
         os_open_btn.bind('<Enter>', lambda e: os_open_btn.configure(bg=ACCENT))
         os_open_btn.bind('<Leave>', lambda e: os_open_btn.configure(bg=SUBTLE))
+        os_search_frame = tk.Frame(os_inner, bg=BG)
+        os_search_frame.pack(fill='x', pady=(0, SMALL_PAD))
+        tk.Label(os_search_frame, text='Search:', font=LABEL_FONT, fg=FG, bg=BG).pack(
+            side='left', padx=(0, 6)
+        )
+        self.os_search_var = tk.StringVar()
+        os_search_entry = tk.Entry(
+            os_search_frame,
+            textvariable=self.os_search_var,
+            font=LABEL_FONT,
+            bg=ENTRY_BG, fg=ENTRY_FG, insertbackground=ENTRY_FG,
+            relief='flat', highlightthickness=0, width=28
+        )
+        os_search_entry.pack(side='left', padx=(0, 8), fill='x', expand=True)
+        os_search_btn = tk.Button(
+            os_search_frame, text='Search', command=self._search_sequences,
+            font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
+            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
+            cursor='hand2'
+        )
+        os_search_btn.pack(side='left')
+        os_search_btn.bind('<Enter>', lambda e: os_search_btn.configure(bg=ACCENT))
+        os_search_btn.bind('<Leave>', lambda e: os_search_btn.configure(bg=SUBTLE))
+        os_search_entry.bind('<Return>', lambda e: self._search_sequences())
         os_list_frame = tk.Frame(os_inner, bg=CARD)
         os_list_frame.pack(fill='both', expand=True, pady=(0, PAD))
         os_scroll = tk.Scrollbar(os_list_frame, bg=SUBTLE)
@@ -377,7 +402,26 @@ class App:
 
         threading.Thread(target=do_fetch, daemon=True).start()
 
-    def _on_sequences_loaded(self, pairs: list[tuple[str, str]], error: str | None):
+    def _search_sequences(self):
+        label = (self.os_sort_menu.get() or 'Newest').strip()
+        sort = next((v for v, l in SORT_OPTIONS if l == label), '1')
+        query = (self.os_search_var.get() or '').strip()
+        self.os_status.config(text='Searching…' if query else 'Loading…')
+        self.os_listbox.delete(0, tk.END)
+        self.os_sequences.clear()
+
+        def do_search():
+            try:
+                pairs = search_sequences(query=query, sort=sort or '1')
+                self.root.after(0, lambda: self._on_sequences_loaded(pairs, None, from_search=bool(query)))
+            except Exception as e:
+                self.root.after(0, lambda: self._on_sequences_loaded([], str(e), from_search=False))
+
+        threading.Thread(target=do_search, daemon=True).start()
+
+    def _on_sequences_loaded(
+        self, pairs: list[tuple[str, str]], error: str | None, *, from_search: bool = False
+    ):
         self.os_sequences.clear()
         self.os_listbox.delete(0, tk.END)
         if error:
@@ -390,7 +434,8 @@ class App:
         if pairs:
             self.os_listbox.selection_set(0)
             self.os_listbox.see(0)
-        self.os_status.config(text=f'{len(pairs)} sequences loaded.')
+        msg = f'{len(pairs)} sequences found.' if from_search else f'{len(pairs)} sequences loaded.'
+        self.os_status.config(text=msg)
 
     def _open_selected_sequence(self):
         sel = self.os_listbox.curselection()
