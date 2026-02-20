@@ -102,7 +102,7 @@ class App:
         notebook.pack(fill='both', expand=True, padx=PAD, pady=(0, PAD))
 
         # ---- Tab 1: File ----
-        file_tab = tk.Frame(notebook, bg=BG)
+        file_tab = tk.Frame(notebook, bg=CARD)
         notebook.add(file_tab, text='  File  ')
 
         # File section: folder + list of .mid files
@@ -172,7 +172,7 @@ class App:
             ).pack(side='left', padx=(0, 10))
 
         # Actions
-        actions = tk.Frame(file_tab, bg=BG)
+        actions = tk.Frame(file_tab, bg=CARD)
         actions.pack(fill='x', padx=PAD, pady=(0, SMALL_PAD))
         export_btn = tk.Button(
             actions, text='Export .mcr', command=self.export,
@@ -209,7 +209,7 @@ class App:
         self.stop_btn.bind('<Leave>', _stop_leave)
 
         # Progress bar (shown during playback)
-        self.progress_frame = tk.Frame(file_tab, bg=BG)
+        self.progress_frame = tk.Frame(file_tab, bg=CARD)
         self.progress_frame.pack(fill='x', padx=PAD, pady=(SMALL_PAD, 0))
         self.progress_bar = ttk.Progressbar(
             self.progress_frame, style='Playback.Horizontal.TProgressbar',
@@ -218,24 +218,29 @@ class App:
         self.progress_bar.pack(fill='x')
 
         # Status
-        status_frame = tk.Frame(file_tab, bg=BG)
+        status_frame = tk.Frame(file_tab, bg=CARD)
         status_frame.pack(fill='x', padx=PAD, pady=(SMALL_PAD, PAD))
         self.status = tk.Label(
             status_frame,
             text='Ready — focus the game window before playing',
-            font=SMALL_FONT, fg=SUBTLE, bg=BG
+            font=SMALL_FONT, fg=SUBTLE, bg=CARD
         )
         self.status.pack(anchor='w')
 
         # ---- Tab 2: Online Sequencer ----
-        os_tab = tk.Frame(notebook, bg=BG)
+        os_tab = tk.Frame(notebook, bg=CARD)
         notebook.add(os_tab, text='  Online Sequencer  ')
-        os_inner = tk.Frame(os_tab, bg=BG)
-        os_inner.pack(fill='both', expand=True, padx=PAD, pady=PAD)
-        tk.Label(os_inner, text='Sequences (onlinesequencer.net)', font=LABEL_FONT, fg=FG, bg=BG).pack(anchor='w')
-        os_toolbar = tk.Frame(os_inner, bg=BG)
+        os_sequences_frame = tk.LabelFrame(
+            os_tab, text='  Sequences  ', font=LABEL_FONT,
+            fg=SUBTLE, bg=CARD, labelanchor='n'
+        )
+        os_sequences_frame.pack(fill='both', expand=True, padx=PAD, pady=(0, PAD))
+        os_inner = tk.Frame(os_sequences_frame, bg=CARD)
+        os_inner.pack(fill='both', expand=True, padx=PAD, pady=(SMALL_PAD, PAD))
+        tk.Label(os_inner, text='Sequences (onlinesequencer.net)', font=LABEL_FONT, fg=FG, bg=CARD).pack(anchor='w')
+        os_toolbar = tk.Frame(os_inner, bg=CARD)
         os_toolbar.pack(fill='x', pady=(SMALL_PAD, PAD))
-        tk.Label(os_toolbar, text='Sort:', font=LABEL_FONT, fg=FG, bg=BG).pack(side='left', padx=(0, 6))
+        tk.Label(os_toolbar, text='Sort:', font=LABEL_FONT, fg=FG, bg=CARD).pack(side='left', padx=(0, 6))
         self.os_sort_menu = ttk.Combobox(
             os_toolbar,
             values=[label for _, label in SORT_OPTIONS],
@@ -262,9 +267,9 @@ class App:
         os_open_btn.pack(side='left')
         os_open_btn.bind('<Enter>', lambda e: os_open_btn.configure(bg=ACCENT))
         os_open_btn.bind('<Leave>', lambda e: os_open_btn.configure(bg=SUBTLE))
-        os_search_frame = tk.Frame(os_inner, bg=BG)
+        os_search_frame = tk.Frame(os_inner, bg=CARD)
         os_search_frame.pack(fill='x', pady=(0, SMALL_PAD))
-        tk.Label(os_search_frame, text='Search:', font=LABEL_FONT, fg=FG, bg=BG).pack(
+        tk.Label(os_search_frame, text='Search:', font=LABEL_FONT, fg=FG, bg=CARD).pack(
             side='left', padx=(0, 6)
         )
         self.os_search_var = tk.StringVar()
@@ -298,6 +303,15 @@ class App:
         self.os_listbox.pack(side='left', fill='both', expand=True)
         self.os_listbox.bind('<Double-Button-1>', lambda e: self._open_selected_sequence())
         os_scroll.config(command=self.os_listbox.yview)
+        # Info below list: status, progress bar
+        os_info_frame = tk.Frame(os_inner, bg=CARD)
+        os_info_frame.pack(fill='x', pady=(PAD, 0))
+        self.os_status = tk.Label(
+            os_info_frame,
+            text='Choose sort and click Load list to show sequences.',
+            font=SMALL_FONT, fg=SUBTLE, bg=CARD
+        )
+        self.os_status.pack(anchor='w')
         # Options (same as File tab: tempo and transpose are shared)
         os_opts_frame = tk.LabelFrame(
             os_tab, text='  Options  ', font=LABEL_FONT,
@@ -324,7 +338,7 @@ class App:
             ).pack(side='left', padx=(0, 10))
         # OS tab: actions (Export .mcr, Stop), progress bar (same style as File tab)
         self._os_last_midi_path: str | None = None
-        os_actions = tk.Frame(os_tab, bg=BG)
+        os_actions = tk.Frame(os_tab, bg=CARD)
         os_actions.pack(fill='x', padx=PAD, pady=(PAD, SMALL_PAD))
         os_export_btn = tk.Button(
             os_actions, text='Export .mcr', command=self._export_os_mcr,
@@ -359,32 +373,22 @@ class App:
                 self.os_stop_btn.configure(bg=SUBTLE)
         self.os_stop_btn.bind('<Enter>', _os_stop_enter)
         self.os_stop_btn.bind('<Leave>', _os_stop_leave)
-        os_progress_frame = tk.Frame(os_tab, bg=BG)
-        os_progress_frame.pack(fill='x', padx=PAD, pady=(SMALL_PAD, 0))
+        # Progress bar (below actions, like File tab)
+        self.os_progress_frame = tk.Frame(os_tab, bg=CARD)
+        self.os_progress_frame.pack(fill='x', padx=PAD, pady=(SMALL_PAD, 0))
         self.os_progress_bar = ttk.Progressbar(
-            os_progress_frame, style='Playback.Horizontal.TProgressbar',
+            self.os_progress_frame, style='Playback.Horizontal.TProgressbar',
             mode='determinate', maximum=100, value=0
         )
         self.os_progress_bar.pack(fill='x')
-        # Status (under progress bar, like File tab)
-        os_status_frame = tk.Frame(os_tab, bg=BG)
-        os_status_frame.pack(fill='x', padx=PAD, pady=(SMALL_PAD, PAD))
-        self.os_status = tk.Label(
-            os_status_frame,
-            text='Choose sort and click Load list to show sequences.',
-            font=SMALL_FONT, fg=SUBTLE, bg=BG
-        )
-        self.os_status.pack(anchor='w')
+        # Bottom: only "Ready — focus..." message
+        os_ready_frame = tk.Frame(os_tab, bg=CARD)
+        os_ready_frame.pack(fill='x', padx=PAD, pady=(SMALL_PAD, PAD))
         tk.Label(
-            os_status_frame,
+            os_ready_frame,
             text='Ready — focus the game window before playing',
-            font=SMALL_FONT, fg=SUBTLE, bg=BG
+            font=SMALL_FONT, fg=SUBTLE, bg=CARD
         ).pack(anchor='w')
-        tk.Label(
-            os_status_frame,
-            text='Play downloads the sequence as MIDI and plays it. Export .mcr after loading to save the macro file.',
-            font=HINT_FONT, fg=SUBTLE, bg=BG, wraplength=HINT_WRAP, justify='left'
-        ).pack(anchor='w', pady=(SMALL_PAD, 0))
 
     def _load_sequences(self):
         label = (self.os_sort_menu.get() or 'Newest').strip()

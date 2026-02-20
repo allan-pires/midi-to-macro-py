@@ -22,7 +22,7 @@ HINT_FONT = (FONT_FAMILY, 8)
 # Spacing (use PAD for section gaps, SMALL_PAD for related elements)
 PAD = 12
 SMALL_PAD = 6
-BTN_PAD = (14, 8)
+BTN_PAD = (8, 2)  # Compact to align with Combobox/Entry height
 
 # Layout
 LISTBOX_MIN_ROWS = 10
