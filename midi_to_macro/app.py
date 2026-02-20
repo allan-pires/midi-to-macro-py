@@ -1,6 +1,7 @@
 """Tkinter GUI application."""
 
 import os
+import shutil
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -26,14 +27,19 @@ from midi_to_macro.theme import (
     ENTRY_FG,
     FONT_FAMILY,
     FG,
+    FG_DISABLED,
     HINT_FONT,
     HINT_WRAP,
     LABEL_FONT,
     LISTBOX_MIN_ROWS,
     OS_LISTBOX_MIN_ROWS,
     PAD,
+    PLAY_GREEN,
+    PLAY_GREEN_HOVER,
     SMALL_FONT,
     SMALL_PAD,
+    STOP_RED,
+    STOP_RED_HOVER,
     SUBTLE,
     TITLE_FONT,
 )
@@ -185,26 +191,26 @@ class App:
         export_btn.bind('<Leave>', lambda e: export_btn.configure(bg=SUBTLE))
         self.play_btn = tk.Button(
             actions, text='▶ Play', command=self.play,
-            font=LABEL_FONT, bg=ACCENT, fg=BG, activebackground=ACCENT_HOVER,
+            font=LABEL_FONT, bg=PLAY_GREEN, fg=BG, activebackground=PLAY_GREEN_HOVER,
             activeforeground=BG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
             cursor='hand2'
         )
         self.play_btn.pack(side='left', padx=(0, 8))
-        self.play_btn.bind('<Enter>', lambda e: self.play_btn.configure(bg=ACCENT_HOVER))
-        self.play_btn.bind('<Leave>', lambda e: self.play_btn.configure(bg=ACCENT))
+        self.play_btn.bind('<Enter>', lambda e: self.play_btn.configure(bg=PLAY_GREEN_HOVER))
+        self.play_btn.bind('<Leave>', lambda e: self.play_btn.configure(bg=PLAY_GREEN))
         self.stop_btn = tk.Button(
             actions, text='Stop', command=self.stop, state='disabled',
-            font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
-            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            cursor='hand2'
+            font=LABEL_FONT, bg=SUBTLE, fg=FG, disabledforeground=FG_DISABLED,
+            activebackground=STOP_RED_HOVER, activeforeground=FG,
+            relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1], cursor='hand2'
         )
         self.stop_btn.pack(side='left')
         def _stop_enter(e):
             if self.stop_btn['state'] == 'normal':
-                self.stop_btn.configure(bg=ACCENT)
+                self.stop_btn.configure(bg=STOP_RED_HOVER)
         def _stop_leave(e):
             if self.stop_btn['state'] == 'normal':
-                self.stop_btn.configure(bg=SUBTLE)
+                self.stop_btn.configure(bg=STOP_RED)
         self.stop_btn.bind('<Enter>', _stop_enter)
         self.stop_btn.bind('<Leave>', _stop_leave)
 
@@ -349,28 +355,37 @@ class App:
         os_export_btn.pack(side='left', padx=(0, 8))
         os_export_btn.bind('<Enter>', lambda e: os_export_btn.configure(bg=ACCENT))
         os_export_btn.bind('<Leave>', lambda e: os_export_btn.configure(bg=SUBTLE))
-        self.os_play_btn = tk.Button(
-            os_actions, text='▶ Play', command=self._load_and_play_sequence,
-            font=LABEL_FONT, bg=ACCENT, fg=BG, activebackground=ACCENT_HOVER,
-            activeforeground=BG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            cursor='hand2'
-        )
-        self.os_play_btn.pack(side='left', padx=(0, 8))
-        self.os_play_btn.bind('<Enter>', lambda e: self.os_play_btn.configure(bg=ACCENT_HOVER))
-        self.os_play_btn.bind('<Leave>', lambda e: self.os_play_btn.configure(bg=ACCENT))
-        self.os_stop_btn = tk.Button(
-            os_actions, text='Stop', command=self.stop, state='disabled',
+        os_download_btn = tk.Button(
+            os_actions, text='Download MIDI', command=self._download_os_midi,
             font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
             activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
             cursor='hand2'
         )
+        os_download_btn.pack(side='left', padx=(0, 8))
+        os_download_btn.bind('<Enter>', lambda e: os_download_btn.configure(bg=ACCENT))
+        os_download_btn.bind('<Leave>', lambda e: os_download_btn.configure(bg=SUBTLE))
+        self.os_play_btn = tk.Button(
+            os_actions, text='▶ Play', command=self._load_and_play_sequence,
+            font=LABEL_FONT, bg=PLAY_GREEN, fg=BG, activebackground=PLAY_GREEN_HOVER,
+            activeforeground=BG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
+            cursor='hand2'
+        )
+        self.os_play_btn.pack(side='left', padx=(0, 8))
+        self.os_play_btn.bind('<Enter>', lambda e: self.os_play_btn.configure(bg=PLAY_GREEN_HOVER))
+        self.os_play_btn.bind('<Leave>', lambda e: self.os_play_btn.configure(bg=PLAY_GREEN))
+        self.os_stop_btn = tk.Button(
+            os_actions, text='Stop', command=self.stop, state='disabled',
+            font=LABEL_FONT, bg=SUBTLE, fg=FG, disabledforeground=FG_DISABLED,
+            activebackground=STOP_RED_HOVER, activeforeground=FG,
+            relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1], cursor='hand2'
+        )
         self.os_stop_btn.pack(side='left')
         def _os_stop_enter(e):
             if self.os_stop_btn['state'] == 'normal':
-                self.os_stop_btn.configure(bg=ACCENT)
+                self.os_stop_btn.configure(bg=STOP_RED_HOVER)
         def _os_stop_leave(e):
             if self.os_stop_btn['state'] == 'normal':
-                self.os_stop_btn.configure(bg=SUBTLE)
+                self.os_stop_btn.configure(bg=STOP_RED)
         self.os_stop_btn.bind('<Enter>', _os_stop_enter)
         self.os_stop_btn.bind('<Leave>', _os_stop_leave)
         # Progress bar (below actions, like File tab)
@@ -492,8 +507,8 @@ class App:
         self.playing = True
         self.play_btn.config(state='disabled')
         self.os_play_btn.config(state='disabled')
-        self.stop_btn.config(state='normal')
-        self.os_stop_btn.config(state='normal')
+        self.stop_btn.config(state='normal', bg=STOP_RED)
+        self.os_stop_btn.config(state='normal', bg=STOP_RED)
         self.status.config(text='Playing… (focus game window)')
         self._os_playing_path = path
         threading.Thread(
@@ -526,6 +541,52 @@ class App:
             self.os_status.config(text=f'Exported {out}')
         except Exception as e:
             messagebox.showerror('Error', str(e))
+
+    def _download_os_midi(self):
+        """Download selected sequence as MIDI and save to a file chosen by the user."""
+        sel = self.os_listbox.curselection()
+        if not sel or not self.os_sequences:
+            messagebox.showwarning(
+                'No selection',
+                'Load list and select a sequence first.'
+            )
+            return
+        idx = sel[0]
+        if idx >= len(self.os_sequences):
+            return
+        sid, title = self.os_sequences[idx]
+        self.os_status.config(text='Downloading…')
+
+        def do_download():
+            try:
+                path = download_sequence_midi(sid, bpm=110, timeout=20)
+                self.root.after(0, lambda: self._on_os_midi_downloaded(path, sid, title))
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror('Download failed', str(e)))
+                self.root.after(0, lambda: self.os_status.config(text='Download failed.'))
+
+        threading.Thread(target=do_download, daemon=True).start()
+
+    def _on_os_midi_downloaded(self, temp_path: str, sid: str, title: str):
+        """Called on main thread with the temp MIDI path; show Save As and copy."""
+        safe_name = "".join(c for c in title[:40] if c.isalnum() or c in " -_").strip() or f"sequence_{sid}"
+        if len(safe_name) > 35:
+            safe_name = safe_name[:35]
+        default_name = f"{safe_name}.mid"
+        out = filedialog.asksaveasfilename(
+            defaultextension='.mid',
+            filetypes=[('MIDI', '*.mid')],
+            initialfile=default_name,
+        )
+        if not out:
+            self.os_status.config(text='Download ready (save cancelled).')
+            return
+        try:
+            shutil.copy2(temp_path, out)
+            self.os_status.config(text=f'Saved {os.path.basename(out)}')
+        except OSError as e:
+            messagebox.showerror('Save failed', str(e))
+            self.os_status.config(text='Save failed.')
 
     def open_folder(self):
         folder = filedialog.askdirectory(title='Select folder with MIDI files')
@@ -591,7 +652,8 @@ class App:
         self.playing = True
         self.play_btn.config(state='disabled')
         self.os_play_btn.config(state='disabled')
-        self.stop_btn.config(state='normal')
+        self.stop_btn.config(state='normal', bg=STOP_RED)
+        self.os_stop_btn.config(state='normal', bg=STOP_RED)
         self.status.config(text='Playing... (focus game window)')
         threading.Thread(
             target=self._play_thread,
@@ -612,8 +674,10 @@ class App:
         self.os_progress_bar['value'] = self.os_progress_bar['maximum']
         if getattr(self, '_os_playing_path', None):
             self._os_playing_path = None
+            self.root.after(0, lambda: self.play_btn.config(state='normal'))
             self.root.after(0, lambda: self.os_play_btn.config(state='normal'))
-            self.root.after(0, lambda: self.os_stop_btn.config(state='disabled'))
+            self.root.after(0, lambda: self.stop_btn.config(state='disabled', bg=SUBTLE))
+            self.root.after(0, lambda: self.os_stop_btn.config(state='disabled', bg=SUBTLE))
             self.root.after(0, lambda: self.os_status.config(text='Finished playing.'))
 
     def stop(self):
@@ -621,8 +685,8 @@ class App:
         self.status.config(text='Stopped')
         self.play_btn.config(state='normal')
         self.os_play_btn.config(state='normal')
-        self.stop_btn.config(state='disabled')
-        self.os_stop_btn.config(state='disabled')
+        self.stop_btn.config(state='disabled', bg=SUBTLE)
+        self.os_stop_btn.config(state='disabled', bg=SUBTLE)
 
     def _play_thread(self, path, tempo_multiplier, transpose):
         try:
@@ -643,5 +707,5 @@ class App:
             self.playing = False
             self.root.after(0, lambda: self.play_btn.config(state='normal'))
             self.root.after(0, lambda: self.os_play_btn.config(state='normal'))
-            self.root.after(0, lambda: self.stop_btn.config(state='disabled'))
-            self.root.after(0, lambda: self.os_stop_btn.config(state='disabled'))
+            self.root.after(0, lambda: self.stop_btn.config(state='disabled', bg=SUBTLE))
+            self.root.after(0, lambda: self.os_stop_btn.config(state='disabled', bg=SUBTLE))

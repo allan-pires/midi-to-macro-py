@@ -5,11 +5,16 @@ BG = '#1a1b26'
 FG = '#c0caf5'
 ACCENT = '#7aa2f7'
 ACCENT_HOVER = '#89b4fa'
+PLAY_GREEN = '#22c55e'
+PLAY_GREEN_HOVER = '#4ade80'
+STOP_RED = '#ef4444'
+STOP_RED_HOVER = '#f87171'
 CARD = '#24283b'
 CARD_BORDER = '#2d3047'
 ENTRY_BG = '#414868'
 ENTRY_FG = '#c0caf5'
 SUBTLE = '#565f89'
+FG_DISABLED = '#a0a8c0'  # Readable on SUBTLE when button is disabled
 BORDER = '#414868'
 
 # Typography
