@@ -1,5 +1,6 @@
 """Tkinter GUI application."""
 
+import json
 import os
 import shutil
 import threading
@@ -99,7 +100,16 @@ class App:
         self._current_source: str | None = None
         self._stopped_by_user: bool = False
 
-        # Header
+        # Per-song tempo/transpose (persisted to JSON)
+        self._song_settings: dict[str, dict[str, float | int]] = {}
+        try:
+            self._song_settings_dir = os.path.join(os.path.expanduser('~'), '.midi_to_macro')
+            self._song_settings_path = os.path.join(self._song_settings_dir, 'song_settings.json')
+            self._load_song_settings()
+        except Exception:
+            self._song_settings_dir = ''
+            self._song_settings_path = ''
+
         header = tk.Frame(root, bg=BG)
         header.pack(fill='x', padx=PAD, pady=(PAD, SMALL_PAD))
         tk.Label(header, text='MIDI → .mcr', font=TITLE_FONT, fg=ACCENT, bg=BG).pack(anchor='w')
@@ -155,6 +165,7 @@ class App:
         )
         self.file_listbox.pack(side='left', fill='both', expand=True)
         scrollbar.config(command=self.file_listbox.yview)
+        self.file_listbox.bind('<<ListboxSelect>>', lambda e: self._on_file_selection_changed())
 
         # Options section (sliders for tempo and transpose)
         opts_frame = tk.LabelFrame(
@@ -205,6 +216,17 @@ class App:
         self.transpose.trace_add('write', _update_transpose_label)
         _update_tempo_label()
         _update_transpose_label()
+
+        # Save tempo/transpose for this song (File tab)
+        save_file_btn = tk.Button(
+            opts_inner, text='Save for this song', command=self._save_tempo_transpose_for_file,
+            font=SMALL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
+            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=SMALL_PAD,
+            cursor='hand2'
+        )
+        save_file_btn.grid(row=2, column=0, columnspan=2, sticky='w', pady=(PAD, 0))
+        save_file_btn.bind('<Enter>', lambda e: save_file_btn.configure(bg=ACCENT))
+        save_file_btn.bind('<Leave>', lambda e: save_file_btn.configure(bg=SUBTLE))
 
         # Actions
         actions = tk.Frame(file_tab, bg=CARD)
@@ -344,6 +366,7 @@ class App:
         )
         self.os_listbox.pack(side='left', fill='both', expand=True)
         self.os_listbox.bind('<Double-Button-1>', lambda e: self._open_selected_sequence())
+        self.os_listbox.bind('<<ListboxSelect>>', lambda e: self._on_os_selection_changed())
         os_scroll.config(command=self.os_listbox.yview)
         # Info below list: status, progress bar
         os_info_frame = tk.Frame(os_inner, bg=CARD)
@@ -390,6 +413,17 @@ class App:
         # Sync OS labels with current vars (traces set in File tab update both)
         self._os_tempo_label.config(text=f'{self.tempo.get():.2f}×')
         self._os_transpose_label.config(text=f'+{self.transpose.get()}' if self.transpose.get() >= 0 else str(self.transpose.get()))
+        # Save tempo/transpose for this song (OS tab)
+        save_os_btn = tk.Button(
+            os_opts_inner, text='Save for this song', command=self._save_tempo_transpose_for_os,
+            font=SMALL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
+            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=SMALL_PAD,
+            cursor='hand2'
+        )
+        save_os_btn.grid(row=2, column=0, columnspan=2, sticky='w', pady=(PAD, 0))
+        save_os_btn.bind('<Enter>', lambda e: save_os_btn.configure(bg=ACCENT))
+        save_os_btn.bind('<Leave>', lambda e: save_os_btn.configure(bg=SUBTLE))
+
         # OS tab: actions (Export .mcr, Stop), progress bar (same style as File tab)
         self._os_last_midi_path: str | None = None
         os_actions = tk.Frame(os_tab, bg=CARD)
@@ -673,6 +707,82 @@ class App:
             return None
         name = self.file_listbox.get(sel[0])
         return os.path.join(self.folder_path, name)
+
+    def _load_song_settings(self):
+        """Load per-song tempo/transpose from JSON."""
+        self._song_settings = {}
+        if not os.path.isfile(self._song_settings_path):
+            return
+        try:
+            with open(self._song_settings_path, encoding='utf-8') as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                self._song_settings = data
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    def _save_song_settings(self):
+        """Persist _song_settings to JSON."""
+        if not getattr(self, '_song_settings_dir', None):
+            return
+        try:
+            os.makedirs(self._song_settings_dir, exist_ok=True)
+            with open(self._song_settings_path, 'w', encoding='utf-8') as f:
+                json.dump(self._song_settings, f, indent=2)
+        except OSError:
+            pass
+
+    def _get_file_song_key(self) -> str | None:
+        path = self.get_selected_file()
+        return os.path.normpath(path) if path else None
+
+    def _get_os_song_key(self) -> str | None:
+        sel = self.os_listbox.curselection()
+        if not sel or not self.os_sequences:
+            return None
+        idx = sel[0]
+        if idx >= len(self.os_sequences):
+            return None
+        sid, _ = self.os_sequences[idx]
+        return f'os:{sid}'
+
+    def _apply_song_settings_for_key(self, key: str | None):
+        """Set tempo and transpose from saved settings for this song, or defaults when none saved."""
+        if not key:
+            return
+        if key not in self._song_settings:
+            self.tempo.set(1.0)
+            self.transpose.set(0)
+            return
+        s = self._song_settings[key]
+        if isinstance(s.get('tempo'), (int, float)):
+            self.tempo.set(max(0.5, min(2.0, float(s['tempo']))))
+        if isinstance(s.get('transpose'), (int, float)):
+            self.transpose.set(max(-12, min(12, int(s['transpose']))))
+
+    def _save_tempo_transpose_for_file(self):
+        key = self._get_file_song_key()
+        if not key:
+            messagebox.showwarning('No selection', 'Select a MIDI file first.')
+            return
+        self._song_settings[key] = {'tempo': self.tempo.get(), 'transpose': self.transpose.get()}
+        self._save_song_settings()
+        self.status.config(text='Tempo/transpose saved for this song.')
+
+    def _save_tempo_transpose_for_os(self):
+        key = self._get_os_song_key()
+        if not key:
+            messagebox.showwarning('No selection', 'Select a sequence first.')
+            return
+        self._song_settings[key] = {'tempo': self.tempo.get(), 'transpose': self.transpose.get()}
+        self._save_song_settings()
+        self.os_status.config(text='Tempo/transpose saved for this song.')
+
+    def _on_file_selection_changed(self):
+        self._apply_song_settings_for_key(self._get_file_song_key())
+
+    def _on_os_selection_changed(self):
+        self._apply_song_settings_for_key(self._get_os_song_key())
 
     def export(self):
         path = self.get_selected_file()
