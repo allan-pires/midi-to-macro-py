@@ -93,6 +93,11 @@ class App:
         self.folder_path = ''
         self.tempo = tk.DoubleVar(value=1.0)
         self.transpose = tk.IntVar(value=0)
+        # Repeat options and current playback source
+        self.repeat_file = tk.BooleanVar(value=False)
+        self.repeat_os = tk.BooleanVar(value=False)
+        self._current_source: str | None = None
+        self._stopped_by_user: bool = False
 
         # Header
         header = tk.Frame(root, bg=BG)
@@ -151,7 +156,7 @@ class App:
         self.file_listbox.pack(side='left', fill='both', expand=True)
         scrollbar.config(command=self.file_listbox.yview)
 
-        # Options section (radio buttons)
+        # Options section (sliders for tempo and transpose)
         opts_frame = tk.LabelFrame(
             file_tab, text='  Options  ', font=LABEL_FONT,
             fg=SUBTLE, bg=CARD, labelanchor='n'
@@ -159,23 +164,47 @@ class App:
         opts_frame.pack(fill='x', padx=PAD, pady=(0, PAD))
         opts_inner = tk.Frame(opts_frame, bg=CARD)
         opts_inner.pack(fill='x', padx=PAD, pady=(SMALL_PAD, PAD))
-        rb_opts = {'font': LABEL_FONT, 'fg': FG, 'bg': CARD, 'activeforeground': FG, 'activebackground': CARD, 'selectcolor': ENTRY_BG}
+        scale_opts = {'font': LABEL_FONT, 'fg': FG, 'bg': CARD, 'troughcolor': ENTRY_BG, 'activebackground': CARD, 'highlightthickness': 0}
         tk.Label(opts_inner, text='Tempo ×', font=LABEL_FONT, fg=FG, bg=CARD).grid(
             row=0, column=0, sticky='w', pady=(0, SMALL_PAD))
         tempo_row = tk.Frame(opts_inner, bg=CARD)
-        tempo_row.grid(row=1, column=0, sticky='w')
-        for val, label in [(0.5, '0.5×'), (0.75, '0.75×'), (1.0, '1×'), (1.5, '1.5×')]:
-            tk.Radiobutton(
-                tempo_row, text=label, variable=self.tempo, value=val, **rb_opts
-            ).pack(side='left', padx=(0, 12))
+        tempo_row.grid(row=1, column=0, sticky='ew', pady=(0, PAD))
+        opts_inner.columnconfigure(0, weight=1)
+        self._tempo_scale = tk.Scale(
+            tempo_row, from_=0.5, to=2.0, resolution=0.05, orient='horizontal',
+            variable=self.tempo, length=180, **scale_opts
+        )
+        self._tempo_scale.pack(side='left', fill='x', expand=True)
+        self._tempo_label = tk.Label(tempo_row, text='1.0×', font=SMALL_FONT, fg=SUBTLE, bg=CARD, width=5)
+        self._tempo_label.pack(side='left', padx=(SMALL_PAD, 0))
         tk.Label(opts_inner, text='Transpose', font=LABEL_FONT, fg=FG, bg=CARD).grid(
             row=0, column=1, sticky='w', padx=(PAD * 2, 0), pady=(0, SMALL_PAD))
         transpose_row = tk.Frame(opts_inner, bg=CARD)
-        transpose_row.grid(row=1, column=1, sticky='w', padx=(PAD * 2, 0))
-        for val, label in [(-2, '−2'), (-1, '−1'), (0, '0'), (1, '+1'), (2, '+2')]:
-            tk.Radiobutton(
-                transpose_row, text=label, variable=self.transpose, value=val, **rb_opts
-            ).pack(side='left', padx=(0, 10))
+        transpose_row.grid(row=1, column=1, sticky='ew', padx=(PAD * 2, 0), pady=(0, PAD))
+        opts_inner.columnconfigure(1, weight=1)
+        self._transpose_scale = tk.Scale(
+            transpose_row, from_=-12, to=12, resolution=1, orient='horizontal',
+            variable=self.transpose, length=180, **scale_opts
+        )
+        self._transpose_scale.pack(side='left', fill='x', expand=True)
+        self._transpose_label = tk.Label(transpose_row, text='0', font=SMALL_FONT, fg=SUBTLE, bg=CARD, width=4)
+        self._transpose_label.pack(side='left', padx=(SMALL_PAD, 0))
+
+        def _update_tempo_label(*_):
+            v = self.tempo.get()
+            self._tempo_label.config(text=f'{v:.2f}×')
+            if hasattr(self, '_os_tempo_label'):
+                self._os_tempo_label.config(text=f'{v:.2f}×')
+        def _update_transpose_label(*_):
+            v = self.transpose.get()
+            s = f'+{v}' if v >= 0 else str(v)
+            self._transpose_label.config(text=s)
+            if hasattr(self, '_os_transpose_label'):
+                self._os_transpose_label.config(text=s)
+        self.tempo.trace_add('write', _update_tempo_label)
+        self.transpose.trace_add('write', _update_transpose_label)
+        _update_tempo_label()
+        _update_transpose_label()
 
         # Actions
         actions = tk.Frame(file_tab, bg=CARD)
@@ -213,6 +242,13 @@ class App:
                 self.stop_btn.configure(bg=STOP_RED)
         self.stop_btn.bind('<Enter>', _stop_enter)
         self.stop_btn.bind('<Leave>', _stop_leave)
+        repeat_file_btn = tk.Checkbutton(
+            actions, text='Repeat', variable=self.repeat_file,
+            font=LABEL_FONT, fg=FG, bg=CARD,
+            activeforeground=FG, activebackground=CARD,
+            selectcolor=ENTRY_BG, cursor='hand2'
+        )
+        repeat_file_btn.pack(side='right')
 
         # Progress bar (shown during playback)
         self.progress_frame = tk.Frame(file_tab, bg=CARD)
@@ -318,7 +354,7 @@ class App:
             font=SMALL_FONT, fg=SUBTLE, bg=CARD
         )
         self.os_status.pack(anchor='w')
-        # Options (same as File tab: tempo and transpose are shared)
+        # Options (same as File tab: tempo and transpose sliders, shared vars)
         os_opts_frame = tk.LabelFrame(
             os_tab, text='  Options  ', font=LABEL_FONT,
             fg=SUBTLE, bg=CARD, labelanchor='n'
@@ -326,22 +362,34 @@ class App:
         os_opts_frame.pack(fill='x', padx=PAD, pady=(0, PAD))
         os_opts_inner = tk.Frame(os_opts_frame, bg=CARD)
         os_opts_inner.pack(fill='x', padx=PAD, pady=(SMALL_PAD, PAD))
+        os_scale_opts = {'font': LABEL_FONT, 'fg': FG, 'bg': CARD, 'troughcolor': ENTRY_BG, 'activebackground': CARD, 'highlightthickness': 0}
         tk.Label(os_opts_inner, text='Tempo ×', font=LABEL_FONT, fg=FG, bg=CARD).grid(
             row=0, column=0, sticky='w', pady=(0, SMALL_PAD))
         os_tempo_row = tk.Frame(os_opts_inner, bg=CARD)
-        os_tempo_row.grid(row=1, column=0, sticky='w')
-        for val, label in [(0.5, '0.5×'), (0.75, '0.75×'), (1.0, '1×'), (1.5, '1.5×')]:
-            tk.Radiobutton(
-                os_tempo_row, text=label, variable=self.tempo, value=val, **rb_opts
-            ).pack(side='left', padx=(0, 12))
+        os_tempo_row.grid(row=1, column=0, sticky='ew', pady=(0, PAD))
+        os_opts_inner.columnconfigure(0, weight=1)
+        self._os_tempo_scale = tk.Scale(
+            os_tempo_row, from_=0.5, to=2.0, resolution=0.05, orient='horizontal',
+            variable=self.tempo, length=180, **os_scale_opts
+        )
+        self._os_tempo_scale.pack(side='left', fill='x', expand=True)
+        self._os_tempo_label = tk.Label(os_tempo_row, text='1.0×', font=SMALL_FONT, fg=SUBTLE, bg=CARD, width=5)
+        self._os_tempo_label.pack(side='left', padx=(SMALL_PAD, 0))
         tk.Label(os_opts_inner, text='Transpose', font=LABEL_FONT, fg=FG, bg=CARD).grid(
             row=0, column=1, sticky='w', padx=(PAD * 2, 0), pady=(0, SMALL_PAD))
         os_transpose_row = tk.Frame(os_opts_inner, bg=CARD)
-        os_transpose_row.grid(row=1, column=1, sticky='w', padx=(PAD * 2, 0))
-        for val, label in [(-2, '−2'), (-1, '−1'), (0, '0'), (1, '+1'), (2, '+2')]:
-            tk.Radiobutton(
-                os_transpose_row, text=label, variable=self.transpose, value=val, **rb_opts
-            ).pack(side='left', padx=(0, 10))
+        os_transpose_row.grid(row=1, column=1, sticky='ew', padx=(PAD * 2, 0), pady=(0, PAD))
+        os_opts_inner.columnconfigure(1, weight=1)
+        self._os_transpose_scale = tk.Scale(
+            os_transpose_row, from_=-12, to=12, resolution=1, orient='horizontal',
+            variable=self.transpose, length=180, **os_scale_opts
+        )
+        self._os_transpose_scale.pack(side='left', fill='x', expand=True)
+        self._os_transpose_label = tk.Label(os_transpose_row, text='0', font=SMALL_FONT, fg=SUBTLE, bg=CARD, width=4)
+        self._os_transpose_label.pack(side='left', padx=(SMALL_PAD, 0))
+        # Sync OS labels with current vars (traces set in File tab update both)
+        self._os_tempo_label.config(text=f'{self.tempo.get():.2f}×')
+        self._os_transpose_label.config(text=f'+{self.transpose.get()}' if self.transpose.get() >= 0 else str(self.transpose.get()))
         # OS tab: actions (Export .mcr, Stop), progress bar (same style as File tab)
         self._os_last_midi_path: str | None = None
         os_actions = tk.Frame(os_tab, bg=CARD)
@@ -388,6 +436,13 @@ class App:
                 self.os_stop_btn.configure(bg=STOP_RED)
         self.os_stop_btn.bind('<Enter>', _os_stop_enter)
         self.os_stop_btn.bind('<Leave>', _os_stop_leave)
+        repeat_os_btn = tk.Checkbutton(
+            os_actions, text='Repeat', variable=self.repeat_os,
+            font=LABEL_FONT, fg=FG, bg=CARD,
+            activeforeground=FG, activebackground=CARD,
+            selectcolor=ENTRY_BG, cursor='hand2'
+        )
+        repeat_os_btn.pack(side='right')
         # Progress bar (below actions, like File tab)
         self.os_progress_frame = tk.Frame(os_tab, bg=CARD)
         self.os_progress_frame.pack(fill='x', padx=PAD, pady=(SMALL_PAD, 0))
@@ -504,6 +559,8 @@ class App:
         self.os_status.config(text='Playing… (focus game window)')
         self.root.focus_set()
         focus_process_window('wwm.exe')
+        self._current_source = 'os'
+        self._stopped_by_user = False
         self.playing = True
         self.play_btn.config(state='disabled')
         self.os_play_btn.config(state='disabled')
@@ -649,6 +706,8 @@ class App:
             return
         self.root.focus_set()
         focus_process_window('wwm.exe')
+        self._current_source = 'file'
+        self._stopped_by_user = False
         self.playing = True
         self.play_btn.config(state='disabled')
         self.os_play_btn.config(state='disabled')
@@ -672,15 +731,18 @@ class App:
     def _progress_done(self):
         self.progress_bar['value'] = self.progress_bar['maximum']
         self.os_progress_bar['value'] = self.os_progress_bar['maximum']
-        if getattr(self, '_os_playing_path', None):
-            self._os_playing_path = None
-            self.root.after(0, lambda: self.play_btn.config(state='normal'))
-            self.root.after(0, lambda: self.os_play_btn.config(state='normal'))
-            self.root.after(0, lambda: self.stop_btn.config(state='disabled', bg=SUBTLE))
-            self.root.after(0, lambda: self.os_stop_btn.config(state='disabled', bg=SUBTLE))
-            self.root.after(0, lambda: self.os_status.config(text='Finished playing.'))
+        # Only switch to "stopped" state if we're not playing (e.g. we didn't just start a repeat)
+        if not self.playing:
+            if getattr(self, '_os_playing_path', None):
+                self._os_playing_path = None
+            self.play_btn.config(state='normal')
+            self.os_play_btn.config(state='normal')
+            self.stop_btn.config(state='disabled', bg=SUBTLE)
+            self.os_stop_btn.config(state='disabled', bg=SUBTLE)
+            self.os_status.config(text='Finished playing.')
 
     def stop(self):
+        self._stopped_by_user = True
         self.playing = False
         self.status.config(text='Stopped')
         self.play_btn.config(state='normal')
@@ -689,6 +751,7 @@ class App:
         self.os_stop_btn.config(state='disabled', bg=SUBTLE)
 
     def _play_thread(self, path, tempo_multiplier, transpose):
+        finished_naturally = False
         try:
             events = midi.parse_midi(
                 path, tempo_multiplier=tempo_multiplier, transpose=transpose
@@ -697,15 +760,32 @@ class App:
             self.root.after(0, lambda: self._set_progress(0, total))
             progress_cb = lambda c, t: self.root.after(0, lambda c=c, t=t: self._set_progress(c, t))
             playback.run_playback(events, lambda: self.playing, progress_callback=progress_cb)
+            # If we reach here without exception, playback reached the end of events
+            finished_naturally = True
             if self.playing:
                 self.status.config(text='Finished playing')
         except Exception as e:
             self.root.after(0, lambda: messagebox.showerror('Playback error', str(e)))
             self.root.after(0, lambda: self.status.config(text='Error'))
         finally:
-            self.root.after(0, self._progress_done)
             self.playing = False
-            self.root.after(0, lambda: self.play_btn.config(state='normal'))
-            self.root.after(0, lambda: self.os_play_btn.config(state='normal'))
-            self.root.after(0, lambda: self.stop_btn.config(state='disabled', bg=SUBTLE))
-            self.root.after(0, lambda: self.os_stop_btn.config(state='disabled', bg=SUBTLE))
+            # Single main-thread callback so repeat and button state stay in sync
+            self.root.after(0, lambda: self._on_playback_finished(finished_naturally))
+
+    def _on_playback_finished(self, finished_naturally: bool):
+        """Run on main thread when playback thread exits. Updates UI and optionally starts repeat."""
+        if finished_naturally and not self._stopped_by_user:
+            self._maybe_repeat_current()
+        self._progress_done()
+
+    def _maybe_repeat_current(self):
+        """If repeat is enabled, start playback again for the current source."""
+        if self._current_source == 'file':
+            if self.repeat_file.get():
+                self.play()
+        elif self._current_source == 'os':
+            if self.repeat_os.get():
+                path = getattr(self, '_os_last_midi_path', None)
+                if path:
+                    # Use current tempo/transpose controls
+                    self._os_start_playback(path, self.tempo.get(), self.transpose.get())
