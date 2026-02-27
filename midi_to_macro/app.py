@@ -106,9 +106,14 @@ class App:
             self._song_settings_dir = os.path.join(os.path.expanduser('~'), '.midi_to_macro')
             self._song_settings_path = os.path.join(self._song_settings_dir, 'song_settings.json')
             self._load_song_settings()
+            self._os_favorites_path = os.path.join(self._song_settings_dir, 'os_favorites.json')
+            self._os_favorites: list[tuple[str, str]] = []
+            self._load_os_favorites()
         except Exception:
             self._song_settings_dir = ''
             self._song_settings_path = ''
+            self._os_favorites_path = ''
+            self._os_favorites = []
 
         header = tk.Frame(root, bg=BG)
         header.pack(fill='x', padx=PAD, pady=(PAD, SMALL_PAD))
@@ -331,6 +336,24 @@ class App:
         os_open_btn.pack(side='left')
         os_open_btn.bind('<Enter>', lambda e: os_open_btn.configure(bg=ACCENT))
         os_open_btn.bind('<Leave>', lambda e: os_open_btn.configure(bg=SUBTLE))
+        os_fav_btn = tk.Button(
+            os_toolbar, text='★ Add to favorites', command=self._os_add_to_favorites,
+            font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
+            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
+            cursor='hand2'
+        )
+        os_fav_btn.pack(side='left', padx=(8, 0))
+        os_fav_btn.bind('<Enter>', lambda e: os_fav_btn.configure(bg=ACCENT))
+        os_fav_btn.bind('<Leave>', lambda e: os_fav_btn.configure(bg=SUBTLE))
+        os_unfav_btn = tk.Button(
+            os_toolbar, text='Remove from favorites', command=self._os_remove_from_favorites,
+            font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
+            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
+            cursor='hand2'
+        )
+        os_unfav_btn.pack(side='left', padx=(4, 0))
+        os_unfav_btn.bind('<Enter>', lambda e: os_unfav_btn.configure(bg=ACCENT))
+        os_unfav_btn.bind('<Leave>', lambda e: os_unfav_btn.configure(bg=SUBTLE))
         os_search_frame = tk.Frame(os_inner, bg=CARD)
         os_search_frame.pack(fill='x', pady=(0, SMALL_PAD))
         tk.Label(os_search_frame, text='Search:', font=LABEL_FONT, fg=FG, bg=CARD).pack(
@@ -368,6 +391,12 @@ class App:
         self.os_listbox.bind('<Double-Button-1>', lambda e: self._open_selected_sequence())
         self.os_listbox.bind('<<ListboxSelect>>', lambda e: self._on_os_selection_changed())
         os_scroll.config(command=self.os_listbox.yview)
+        # Show saved favorites in list immediately if any
+        if self._os_favorites:
+            self.os_sequences = list(self._os_favorites)
+            self._refresh_os_listbox()
+            self.os_listbox.selection_set(0)
+            self.os_listbox.see(0)
         # Info below list: status, progress bar
         os_info_frame = tk.Frame(os_inner, bg=CARD)
         os_info_frame.pack(fill='x', pady=(PAD, 0))
@@ -377,6 +406,8 @@ class App:
             font=SMALL_FONT, fg=SUBTLE, bg=CARD
         )
         self.os_status.pack(anchor='w')
+        if self._os_favorites:
+            self.os_status.config(text=f'★ {len(self._os_favorites)} favorites. Load list for more.')
         # Options (same as File tab: tempo and transpose sliders, shared vars)
         os_opts_frame = tk.LabelFrame(
             os_tab, text='  Options  ', font=LABEL_FONT,
@@ -535,14 +566,21 @@ class App:
         if error:
             self.os_status.config(text=f'Error: {error}')
             return
+        fav_ids = self._os_fav_ids()
+        # Favorites first, then results (excluding ids already in favorites to avoid duplicate)
+        ordered: list[tuple[str, str]] = list(self._os_favorites)
         for sid, title in pairs:
-            self.os_sequences.append((sid, title))
-            display = f"  {title[:55] + '…' if len(title) > 55 else title}  (ID: {sid})"
-            self.os_listbox.insert(tk.END, display)
-        if pairs:
+            if sid not in fav_ids:
+                ordered.append((sid, title))
+        self.os_sequences = ordered
+        for sid, title in self.os_sequences:
+            self.os_listbox.insert(tk.END, self._os_display_line(sid, title))
+        if self.os_sequences:
             self.os_listbox.selection_set(0)
             self.os_listbox.see(0)
         msg = f'{len(pairs)} sequences found.' if from_search else f'{len(pairs)} sequences loaded.'
+        if self._os_favorites:
+            msg += f'  ★ {len(self._os_favorites)} favorites at top.'
         self.os_status.config(text=msg)
 
     def _open_selected_sequence(self):
@@ -556,6 +594,57 @@ class App:
         sid, _ = self.os_sequences[idx]
         open_sequence(sid)
         self.os_status.config(text=f'Opened sequence {sid} in browser.')
+
+    def _os_add_to_favorites(self):
+        sel = self.os_listbox.curselection()
+        if not sel or not self.os_sequences:
+            messagebox.showwarning('No selection', 'Select a sequence first.')
+            return
+        idx = sel[0]
+        if idx >= len(self.os_sequences):
+            return
+        sid, title = self.os_sequences[idx]
+        if sid in self._os_fav_ids():
+            self.os_status.config(text='Already in favorites.')
+            return
+        self._os_favorites.append((sid, title))
+        self._save_os_favorites()
+        fav_ids = self._os_fav_ids()
+        rest = [x for x in self.os_sequences if x[0] not in fav_ids]
+        self.os_sequences = list(self._os_favorites) + rest
+        self._refresh_os_listbox()
+        if self.os_sequences:
+            try:
+                new_idx = next(i for i, (s, _) in enumerate(self.os_sequences) if s == sid)
+                self.os_listbox.selection_clear(0, tk.END)
+                self.os_listbox.selection_set(new_idx)
+                self.os_listbox.see(new_idx)
+            except StopIteration:
+                pass
+        self.os_status.config(text=f'Added to favorites: {title[:40]}…' if len(title) > 40 else f'Added to favorites: {title}')
+
+    def _os_remove_from_favorites(self):
+        sel = self.os_listbox.curselection()
+        if not sel or not self.os_sequences:
+            messagebox.showwarning('No selection', 'Select a sequence first.')
+            return
+        idx = sel[0]
+        if idx >= len(self.os_sequences):
+            return
+        sid, title = self.os_sequences[idx]
+        if sid not in self._os_fav_ids():
+            self.os_status.config(text='Not in favorites.')
+            return
+        self._os_favorites = [(s, t) for s, t in self._os_favorites if s != sid]
+        self._save_os_favorites()
+        fav_ids = self._os_fav_ids()
+        rest = [x for x in self.os_sequences if x[0] not in fav_ids]
+        self.os_sequences = list(self._os_favorites) + rest
+        self._refresh_os_listbox()
+        if self.os_sequences:
+            self.os_listbox.selection_set(0)
+            self.os_listbox.see(0)
+        self.os_status.config(text='Removed from favorites.')
 
     def _load_and_play_sequence(self):
         """Download selected sequence as MIDI and start playback (no browser)."""
@@ -731,6 +820,47 @@ class App:
                 json.dump(self._song_settings, f, indent=2)
         except OSError:
             pass
+
+    def _load_os_favorites(self):
+        """Load Online Sequencer favorites from JSON."""
+        self._os_favorites = []
+        if not getattr(self, '_os_favorites_path', None) or not os.path.isfile(self._os_favorites_path):
+            return
+        try:
+            with open(self._os_favorites_path, encoding='utf-8') as f:
+                data = json.load(f)
+            if isinstance(data, dict) and isinstance(data.get('favorites'), list):
+                for item in data['favorites']:
+                    if isinstance(item, dict) and isinstance(item.get('id'), str) and isinstance(item.get('title'), str):
+                        self._os_favorites.append((item['id'], item['title']))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    def _save_os_favorites(self):
+        """Persist Online Sequencer favorites to JSON."""
+        if not getattr(self, '_song_settings_dir', None):
+            return
+        try:
+            os.makedirs(self._song_settings_dir, exist_ok=True)
+            data = {'favorites': [{'id': sid, 'title': title} for sid, title in self._os_favorites]}
+            with open(self._os_favorites_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2)
+        except OSError:
+            pass
+
+    def _os_fav_ids(self):
+        return {sid for sid, _ in self._os_favorites}
+
+    def _os_display_line(self, sid: str, title: str) -> str:
+        prefix = '★ ' if sid in self._os_fav_ids() else '  '
+        short = title[:55] + '…' if len(title) > 55 else title
+        return f"{prefix}{short}  (ID: {sid})"
+
+    def _refresh_os_listbox(self):
+        """Redraw OS listbox from current os_sequences (with ★ for favorites)."""
+        self.os_listbox.delete(0, tk.END)
+        for sid, title in self.os_sequences:
+            self.os_listbox.insert(tk.END, self._os_display_line(sid, title))
 
     def _get_file_song_key(self) -> str | None:
         path = self.get_selected_file()
