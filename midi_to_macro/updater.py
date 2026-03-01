@@ -9,6 +9,7 @@ import tempfile
 import urllib.error
 import urllib.request
 import webbrowser
+import zipfile
 
 from midi_to_macro.version import (
     GITHUB_RELEASES_API,
@@ -60,11 +61,19 @@ def check_for_updates(timeout: float = 10.0) -> tuple[str | None, str | None, st
     body = (release.get("body") or "").strip() or None
     download_url = None
     assets = release.get("assets") or []
+    # Prefer .zip (onedir bundle) for "Download and run" — runs without temp extraction, avoids "Failed to load Python DLL"
     for a in assets:
         url = a.get("browser_download_url")
-        if url:
+        name = (a.get("name") or "").lower()
+        if url and name.endswith(".zip"):
             download_url = url
             break
+    if not download_url:
+        for a in assets:
+            url = a.get("browser_download_url")
+            if url:
+                download_url = url
+                break
 
     return (latest_version, html_url, body, download_url, None)
 
@@ -90,10 +99,11 @@ def download_update(
     save_dir: str | None = None,
 ) -> str | None:
     """
-    Download the update file. Returns the path to the downloaded file, or None on failure.
-    If save_dir is None, saves to a temp file (caller can run or clean up).
-    If save_dir is set (e.g. Downloads), saves there with the asset filename so the exe
-    runs from a stable path (avoids "Failed to load Python DLL" when run from temp).
+    Download the update. Returns the path to run (exe or folder exe), or None on failure.
+    - If URL is .zip and save_dir is set: download zip, extract to save_dir/where-songs-meet/,
+      return path to save_dir/where-songs-meet/where-songs-meet.exe (runs with DLLs beside it, no "Failed to load Python DLL").
+    - If URL is .exe and save_dir is set: save exe there, return its path.
+    - If save_dir is None: save to temp and return path (caller runs or cleans up).
     """
     if not download_url:
         return None
@@ -109,8 +119,27 @@ def download_update(
             data = resp.read()
     except (urllib.error.URLError, OSError, ValueError):
         return None
-    # Infer filename from URL
     filename = download_url.split("/")[-1].split("?")[0] or "update"
+
+    if filename.lower().endswith(".zip") and save_dir:
+        # Extract onedir bundle so exe runs from a folder with all DLLs
+        os.makedirs(save_dir, exist_ok=True)
+        zip_path = os.path.join(save_dir, filename)
+        try:
+            with open(zip_path, "wb") as f:
+                f.write(data)
+            extract_dir = os.path.join(save_dir, "where-songs-meet")
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                zf.extractall(os.path.dirname(extract_dir))
+            exe_path = os.path.join(extract_dir, "where-songs-meet.exe")
+            try:
+                os.remove(zip_path)
+            except OSError:
+                pass
+            return exe_path if os.path.isfile(exe_path) else None
+        except (OSError, zipfile.BadZipFile):
+            return None
+
     if not filename.endswith(".exe") and not filename.endswith(".msi"):
         filename = filename + ".exe"
 

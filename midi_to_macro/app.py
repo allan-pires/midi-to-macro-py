@@ -928,13 +928,13 @@ class App:
         if download_url:
 
             def download_and_run():
-                # Save to Downloads so the exe runs from a stable path (avoids "Failed to load Python DLL" from temp)
                 save_dir = os.path.join(os.path.expanduser("~"), "Downloads")
                 path = download_update(download_url, save_dir=save_dir)
                 if path:
                     try:
-                        if os.name == 'nt' and getattr(sys, 'frozen', False):
-                            # Replace current exe with new one, then run it
+                        # Run from extracted folder (zip) or single exe; only replace-in-place for single exe when frozen
+                        from_zip = os.path.basename(os.path.dirname(path)) == "where-songs-meet"
+                        if os.name == "nt" and getattr(sys, "frozen", False) and not from_zip:
                             current_exe = sys.executable
                             def q(s: str) -> str:
                                 return s.replace('"', '""')
@@ -958,15 +958,13 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
                                 os.close(fd)
                                 os.unlink(batch_path)
                                 raise
-                            top.destroy()
-                            self.root.quit()
                         else:
-                            if os.name == 'nt':
+                            if os.name == "nt":
                                 os.startfile(path)
                             else:
-                                subprocess.run(['xdg-open', path], check=False)
-                            top.destroy()
-                            self.root.quit()
+                                subprocess.run(["xdg-open", path], check=False)
+                        top.destroy()
+                        self.root.quit()
                     except Exception:
                         messagebox.showinfo('Downloaded', f'Saved to: {path}')
                         top.destroy()

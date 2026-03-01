@@ -1,8 +1,10 @@
-"""Build a single-file Windows executable with PyInstaller. Run from project root."""
+"""Build a one-folder Windows executable with PyInstaller (avoids "Failed to load Python DLL"
+when run from Download and run). Run from project root."""
 
 import os
 import subprocess
 import sys
+import zipfile
 
 
 def main():
@@ -36,10 +38,11 @@ def main():
         "--hidden-import", "midi_to_macro.icon_images",
     ]
 
+    # One-folder (onedir) so exe runs with DLLs beside it — no temp extraction, no "Failed to load Python DLL"
     cmd = (
         [
             sys.executable, "-m", "PyInstaller",
-            "--onefile",
+            "--onedir",
             "--windowed",
             "--name", "where-songs-meet",
             "--clean",
@@ -55,8 +58,18 @@ def main():
     result = subprocess.run(cmd, cwd=root)
     if result.returncode != 0:
         sys.exit(result.returncode)
-    exe = os.path.join(root, "dist", "where-songs-meet.exe")
-    print("Built:", exe)
+
+    dir_path = os.path.join(root, "dist", "where-songs-meet")
+    exe_path = os.path.join(dir_path, "where-songs-meet.exe")
+    zip_path = os.path.join(root, "dist", "where-songs-meet.zip")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for dirpath, _dirnames, filenames in os.walk(dir_path):
+            for name in filenames:
+                path = os.path.join(dirpath, name)
+                arcname = os.path.join("where-songs-meet", os.path.relpath(path, dir_path))
+                zf.write(path, arcname)
+    print("Built folder:", dir_path)
+    print("Built zip:", zip_path)
 
 
 if __name__ == "__main__":
