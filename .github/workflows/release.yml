@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 jobs:
   build-and-release:
@@ -18,16 +19,49 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Set tag name
+        id: tag
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "tag_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            VERSION=$(python -c "exec(open('midi_to_macro/version.py').read()); print(__version__)")
+            echo "tag_name=v${VERSION}" >> $GITHUB_OUTPUT
+          fi
+          echo "Tag: ${{ steps.tag.outputs.tag_name }}"
+
+      - name: Check if release already exists
+        if: github.event_name == 'workflow_dispatch'
+        id: check
+        shell: bash
+        run: |
+          if gh release view "${{ steps.tag.outputs.tag_name }}" 2>/dev/null; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Release ${{ steps.tag.outputs.tag_name }} already exists — skipping build."
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip if already released
+        if: github.event_name == 'workflow_dispatch' && steps.check.outputs.exists == 'true'
+        run: echo "Nothing to do."
+
       - name: Install dependencies
+        if: github.event_name == 'push' || steps.check.outputs.exists != 'true'
         run: pip install -r requirements-build.txt
 
       - name: Build executable
+        if: github.event_name == 'push' || steps.check.outputs.exists != 'true'
         run: python tools/build_exe.py
 
       - name: Create Release
+        if: github.event_name == 'push' || steps.check.outputs.exists != 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ steps.tag.outputs.tag_name }}
           files: dist/where-songs-meet.exe
           generate_release_notes: true
         env:
