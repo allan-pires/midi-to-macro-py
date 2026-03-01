@@ -1,9 +1,7 @@
 """Tkinter GUI application."""
 
-import json
 import os
 import shutil
-import socket
 import tempfile
 import threading
 import time
@@ -19,6 +17,9 @@ from midi_to_macro.online_sequencer import (
     search_sequences,
     SORT_OPTIONS,
 )
+from midi_to_macro.os_favorites import OsFavorites
+from midi_to_macro.playlist import Playlist
+from midi_to_macro.song_settings import SongSettings
 from midi_to_macro.sync import DEFAULT_PORT, Room, START_DELAY_SEC, get_lan_ip
 from midi_to_macro.window_focus import focus_process_window
 from midi_to_macro.theme import (
@@ -125,31 +126,16 @@ class App:
         self.save_os_var = tk.BooleanVar(value=False)
         self._current_source: str | None = None
         self._stopped_by_user: bool = False
-        # Playlist: list of ('file', path) or ('os', sid, title)
-        self._playlist: list[tuple[str, ...]] = []
-        self._playlist_index: int = 0
-        # Play together room (host or client)
+        self._playlist = Playlist()
         self._room = Room()
-        self._sync_temp_paths: list[str] = []  # temp files from sync to delete later
+        self._sync_temp_paths: list[str] = []
+
+        self._song_settings = SongSettings()
+        self._os_favorites = OsFavorites(self._song_settings.settings_dir)
 
         def _tooltip(btn, status_widget, hint: str):
             btn.bind('<Enter>', lambda e: status_widget.config(text=hint))
             btn.bind('<Leave>', lambda e: status_widget.config(text=''))
-
-        # Per-song tempo/transpose (persisted to JSON)
-        self._song_settings: dict[str, dict[str, float | int]] = {}
-        try:
-            self._song_settings_dir = os.path.join(os.path.expanduser('~'), '.midi_to_macro')
-            self._song_settings_path = os.path.join(self._song_settings_dir, 'song_settings.json')
-            self._load_song_settings()
-            self._os_favorites_path = os.path.join(self._song_settings_dir, 'os_favorites.json')
-            self._os_favorites: list[tuple[str, str]] = []
-            self._load_os_favorites()
-        except Exception:
-            self._song_settings_dir = ''
-            self._song_settings_path = ''
-            self._os_favorites_path = ''
-            self._os_favorites = []
 
         header = tk.Frame(root, bg=BG)
         header.pack(fill='x', padx=PAD, pady=(PAD, 2))
@@ -272,13 +258,11 @@ class App:
                     self.save_file_var.set(False)
                     messagebox.showwarning('No selection', 'Select a MIDI file first.')
                     return
-                self._song_settings[key] = {'tempo': self.tempo.get(), 'transpose': self.transpose.get()}
-                self._save_song_settings()
+                self._song_settings.set(key, self.tempo.get(), self.transpose.get())
                 self.status.config(text='Tempo/transpose saved for this song.')
             else:
-                if key and key in self._song_settings:
-                    del self._song_settings[key]
-                    self._save_song_settings()
+                if key:
+                    self._song_settings.delete(key)
         save_file_cb = tk.Checkbutton(
             opts_inner, text='Save for this song', variable=self.save_file_var,
             font=SMALL_FONT, fg=FG, bg=CARD, activeforeground=FG, activebackground=CARD,
@@ -457,8 +441,8 @@ class App:
         self.os_listbox.bind('<<ListboxSelect>>', lambda e: self._on_os_selection_changed())
         os_scroll.config(command=self.os_listbox.yview)
         # Show saved favorites in list immediately if any
-        if self._os_favorites:
-            self.os_sequences = list(self._os_favorites)
+        if self._os_favorites.list_all():
+            self.os_sequences = list(self._os_favorites.list_all())
             self._refresh_os_listbox()
             self.os_listbox.selection_set(0)
             self.os_listbox.see(0)
@@ -471,8 +455,8 @@ class App:
             font=SMALL_FONT, fg=SUBTLE, bg=CARD
         )
         self.os_status.pack(anchor='w')
-        if self._os_favorites:
-            self.os_status.config(text=f'★ {len(self._os_favorites)} favorites. Load list for more.')
+        if self._os_favorites.list_all():
+            self.os_status.config(text=f'★ {len(self._os_favorites.list_all())} favorites. Load list for more.')
         _tooltip(load_btn, self.os_status, 'Load list')
         _tooltip(os_open_btn, self.os_status, 'Open selected in browser')
         _tooltip(os_fav_btn, self.os_status, 'Add to favorites')
@@ -529,13 +513,11 @@ class App:
                     self.save_os_var.set(False)
                     messagebox.showwarning('No selection', 'Select a sequence first.')
                     return
-                self._song_settings[key] = {'tempo': self.tempo.get(), 'transpose': self.transpose.get()}
-                self._save_song_settings()
+                self._song_settings.set(key, self.tempo.get(), self.transpose.get())
                 self.os_status.config(text='Tempo/transpose saved for this song.')
             else:
-                if key and key in self._song_settings:
-                    del self._song_settings[key]
-                    self._save_song_settings()
+                if key:
+                    self._song_settings.delete(key)
         save_os_cb = tk.Checkbutton(
             os_opts_inner, text='Save for this song', variable=self.save_os_var,
             font=SMALL_FONT, fg=FG, bg=CARD, activeforeground=FG, activebackground=CARD,
@@ -1025,9 +1007,9 @@ class App:
         if error:
             self.os_status.config(text=f'Error: {error}')
             return
-        fav_ids = self._os_fav_ids()
+        fav_ids = self._os_favorites.fav_ids()
         # Favorites first, then results (excluding ids already in favorites to avoid duplicate)
-        ordered: list[tuple[str, str]] = list(self._os_favorites)
+        ordered: list[tuple[str, str]] = list(self._os_favorites.list_all())
         for sid, title in pairs:
             if sid not in fav_ids:
                 ordered.append((sid, title))
@@ -1038,8 +1020,8 @@ class App:
             self.os_listbox.selection_set(0)
             self.os_listbox.see(0)
         msg = f'{len(pairs)} sequences found.' if from_search else f'{len(pairs)} sequences loaded.'
-        if self._os_favorites:
-            msg += f'  ★ {len(self._os_favorites)} favorites at top.'
+        if self._os_favorites.list_all():
+            msg += f'  ★ {len(self._os_favorites.list_all())} favorites at top.'
         self.os_status.config(text=msg)
 
     def _open_selected_sequence(self):
@@ -1063,14 +1045,15 @@ class App:
         if idx >= len(self.os_sequences):
             return
         sid, title = self.os_sequences[idx]
-        if sid in self._os_fav_ids():
+        if sid in self._os_favorites.fav_ids():
             self.os_status.config(text='Already in favorites.')
             return
-        self._os_favorites.append((sid, title))
-        self._save_os_favorites()
-        fav_ids = self._os_fav_ids()
+        if not self._os_favorites.add(sid, title):
+            self.os_status.config(text='Already in favorites.')
+            return
+        fav_ids = self._os_favorites.fav_ids()
         rest = [x for x in self.os_sequences if x[0] not in fav_ids]
-        self.os_sequences = list(self._os_favorites) + rest
+        self.os_sequences = list(self._os_favorites.list_all()) + rest
         self._refresh_os_listbox()
         if self.os_sequences:
             try:
@@ -1091,14 +1074,13 @@ class App:
         if idx >= len(self.os_sequences):
             return
         sid, title = self.os_sequences[idx]
-        if sid not in self._os_fav_ids():
+        if sid not in self._os_favorites.fav_ids():
             self.os_status.config(text='Not in favorites.')
             return
-        self._os_favorites = [(s, t) for s, t in self._os_favorites if s != sid]
-        self._save_os_favorites()
-        fav_ids = self._os_fav_ids()
+        self._os_favorites.remove(sid)
+        fav_ids = self._os_favorites.fav_ids()
         rest = [x for x in self.os_sequences if x[0] not in fav_ids]
-        self.os_sequences = list(self._os_favorites) + rest
+        self.os_sequences = list(self._os_favorites.list_all()) + rest
         self._refresh_os_listbox()
         if self.os_sequences:
             self.os_listbox.selection_set(0)
@@ -1260,7 +1242,7 @@ class App:
 
     def _refresh_playlist_listbox(self):
         self.playlist_listbox.delete(0, tk.END)
-        for item in self._playlist:
+        for item in self._playlist.items():
             self.playlist_listbox.insert(tk.END, self._playlist_display_line(item))
         n = len(self._playlist)
         if not self.playing:
@@ -1270,12 +1252,12 @@ class App:
 
     def _pl_select_playing(self):
         """Select and scroll to the currently playing item in the playlist listbox."""
-        if self._current_source != 'playlist' or self._playlist_index >= len(self._playlist):
+        if self._current_source != 'playlist' or self._playlist.current_index() >= len(self._playlist):
             return
         self.playlist_listbox.selection_clear(0, tk.END)
-        self.playlist_listbox.selection_set(self._playlist_index)
-        self.playlist_listbox.see(self._playlist_index)
-        self.playlist_listbox.activate(self._playlist_index)
+        self.playlist_listbox.selection_set(self._playlist.current_index())
+        self.playlist_listbox.see(self._playlist.current_index())
+        self.playlist_listbox.activate(self._playlist.current_index())
 
     def _add_file_to_playlist(self):
         if not self.folder_path:
@@ -1288,7 +1270,7 @@ class App:
         for idx in sel:
             name = self.file_listbox.get(idx)
             path = os.path.join(self.folder_path, name)
-            self._playlist.append(('file', path))
+            self._playlist.add_file(path)
         self._refresh_playlist_listbox()
 
     def _add_os_to_playlist(self):
@@ -1299,17 +1281,14 @@ class App:
         for idx in sel:
             if idx < len(self.os_sequences):
                 sid, title = self.os_sequences[idx]
-                self._playlist.append(('os', sid, title))
+                self._playlist.add_os(sid, title)
         self._refresh_playlist_listbox()
 
     def _remove_from_playlist(self):
         sel = list(self.playlist_listbox.curselection())
         if not sel:
             return
-        # Remove in reverse order so indices stay valid
-        for idx in sorted(sel, reverse=True):
-            if 0 <= idx < len(self._playlist):
-                self._playlist.pop(idx)
+        self._playlist.remove_indices(sorted(sel, reverse=True))
         self._refresh_playlist_listbox()
 
     def _clear_playlist(self):
@@ -1329,7 +1308,7 @@ class App:
         self.root.focus_set()
         focus_process_window('wwm.exe')
         self._current_source = 'playlist'
-        self._playlist_index = 0
+        self._playlist.reset_to_start()
         self._stopped_by_user = False
         self.playing = True
         self.play_btn.config(state='disabled')
@@ -1368,14 +1347,17 @@ class App:
 
     def _start_next_playlist_item(self):
         """Start playback of the current playlist item (main thread). Advances to next when finished via _on_playback_finished."""
-        if self._playlist_index >= len(self._playlist):
+        if self._playlist.current_index() >= len(self._playlist):
             self.root.after(0, self._progress_done)
             return
-        item = self._playlist[self._playlist_index]
+        item = self._playlist.current_item()
+        if not item:
+            self.root.after(0, self._progress_done)
+            return
         n = len(self._playlist)
-        self.status.config(text=f'Playing {self._playlist_index + 1}/{n}… (focus game window)')
-        self.os_status.config(text=f'Playing {self._playlist_index + 1}/{n}… (focus game window)')
-        self.pl_status.config(text=f'Playing {self._playlist_index + 1}/{n}… (focus game window)')
+        self.status.config(text=f'Playing {self._playlist.current_index() + 1}/{n}… (focus game window)')
+        self.os_status.config(text=f'Playing {self._playlist.current_index() + 1}/{n}… (focus game window)')
+        self.pl_status.config(text=f'Playing {self._playlist.current_index() + 1}/{n}… (focus game window)')
         self._pl_select_playing()
         if item[0] == 'file':
             self._start_file_playback(item[1], keep_source=True)
@@ -1396,62 +1378,8 @@ class App:
 
             threading.Thread(target=do_download, daemon=True).start()
 
-    def _load_song_settings(self):
-        """Load per-song tempo/transpose from JSON."""
-        self._song_settings = {}
-        if not os.path.isfile(self._song_settings_path):
-            return
-        try:
-            with open(self._song_settings_path, encoding='utf-8') as f:
-                data = json.load(f)
-            if isinstance(data, dict):
-                self._song_settings = data
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    def _save_song_settings(self):
-        """Persist _song_settings to JSON."""
-        if not getattr(self, '_song_settings_dir', None):
-            return
-        try:
-            os.makedirs(self._song_settings_dir, exist_ok=True)
-            with open(self._song_settings_path, 'w', encoding='utf-8') as f:
-                json.dump(self._song_settings, f, indent=2)
-        except OSError:
-            pass
-
-    def _load_os_favorites(self):
-        """Load Online Sequencer favorites from JSON."""
-        self._os_favorites = []
-        if not getattr(self, '_os_favorites_path', None) or not os.path.isfile(self._os_favorites_path):
-            return
-        try:
-            with open(self._os_favorites_path, encoding='utf-8') as f:
-                data = json.load(f)
-            if isinstance(data, dict) and isinstance(data.get('favorites'), list):
-                for item in data['favorites']:
-                    if isinstance(item, dict) and isinstance(item.get('id'), str) and isinstance(item.get('title'), str):
-                        self._os_favorites.append((item['id'], item['title']))
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    def _save_os_favorites(self):
-        """Persist Online Sequencer favorites to JSON."""
-        if not getattr(self, '_song_settings_dir', None):
-            return
-        try:
-            os.makedirs(self._song_settings_dir, exist_ok=True)
-            data = {'favorites': [{'id': sid, 'title': title} for sid, title in self._os_favorites]}
-            with open(self._os_favorites_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2)
-        except OSError:
-            pass
-
-    def _os_fav_ids(self):
-        return {sid for sid, _ in self._os_favorites}
-
     def _os_display_line(self, sid: str, title: str) -> str:
-        prefix = '★ ' if sid in self._os_fav_ids() else '  '
+        prefix = '★ ' if sid in self._os_favorites.fav_ids() else '  '
         short = title[:55] + '…' if len(title) > 55 else title
         return f"{prefix}{short}  (ID: {sid})"
 
@@ -1479,11 +1407,11 @@ class App:
         """Set tempo and transpose from saved settings for this song, or defaults when none saved."""
         if not key:
             return
-        if key not in self._song_settings:
+        s = self._song_settings.get(key)
+        if s is None:
             self.tempo.set(1.0)
             self.transpose.set(0)
             return
-        s = self._song_settings[key]
         if isinstance(s.get('tempo'), (int, float)):
             self.tempo.set(max(0.25, min(1.75, float(s['tempo']))))
         if isinstance(s.get('transpose'), (int, float)):
@@ -1494,8 +1422,7 @@ class App:
         if not key:
             messagebox.showwarning('No selection', 'Select a MIDI file first.')
             return
-        self._song_settings[key] = {'tempo': self.tempo.get(), 'transpose': self.transpose.get()}
-        self._save_song_settings()
+        self._song_settings.set(key, self.tempo.get(), self.transpose.get())
         self.status.config(text='Tempo/transpose saved for this song.')
 
     def _save_tempo_transpose_for_os(self):
@@ -1503,19 +1430,18 @@ class App:
         if not key:
             messagebox.showwarning('No selection', 'Select a sequence first.')
             return
-        self._song_settings[key] = {'tempo': self.tempo.get(), 'transpose': self.transpose.get()}
-        self._save_song_settings()
+        self._song_settings.set(key, self.tempo.get(), self.transpose.get())
         self.os_status.config(text='Tempo/transpose saved for this song.')
 
     def _on_file_selection_changed(self):
         key = self._get_file_song_key()
         self._apply_song_settings_for_key(key)
-        self.save_file_var.set(key in self._song_settings if key else False)
+        self.save_file_var.set(self._song_settings.has(key) if key else False)
 
     def _on_os_selection_changed(self):
         key = self._get_os_song_key()
         self._apply_song_settings_for_key(key)
-        self.save_os_var.set(key in self._song_settings if key else False)
+        self.save_os_var.set(self._song_settings.has(key) if key else False)
 
     def play(self):
         if not playback.KEYBOARD_AVAILABLE:
@@ -1604,33 +1530,27 @@ class App:
         self.os_stop_btn.config(state='disabled', bg=SUBTLE)
 
     def _play_thread(self, path, tempo_multiplier, transpose):
-        finished_naturally = False
+        def on_done(finished_naturally: bool):
+            self.playing = False
+            self.root.after(0, lambda: self._on_playback_finished(finished_naturally))
+
         try:
-            events = midi.parse_midi(
-                path, tempo_multiplier=tempo_multiplier, transpose=transpose
+            playback.run_playback_from_file(
+                path, tempo_multiplier, transpose,
+                is_playing=lambda: self.playing,
+                progress_callback=lambda c, t: self.root.after(0, lambda c=c, t=t: self._set_progress(c, t)),
+                done_callback=on_done,
             )
-            total = len(events)
-            self.root.after(0, lambda: self._set_progress(0, total))
-            progress_cb = lambda c, t: self.root.after(0, lambda c=c, t=t: self._set_progress(c, t))
-            playback.run_playback(events, lambda: self.playing, progress_callback=progress_cb)
-            # If we reach here without exception, playback reached the end of events
-            finished_naturally = True
-            if self.playing:
-                self.status.config(text='Finished playing')
         except Exception as e:
             self.root.after(0, lambda: messagebox.showerror('Playback error', str(e)))
             self.root.after(0, lambda: self.status.config(text='Error'))
-        finally:
-            self.playing = False
-            # Single main-thread callback so repeat and button state stay in sync
-            self.root.after(0, lambda: self._on_playback_finished(finished_naturally))
+            # run_playback_from_file's finally already calls on_done(False) when we raise
 
     def _on_playback_finished(self, finished_naturally: bool):
         """Run on main thread when playback thread exits. Updates UI and optionally starts repeat or next playlist item."""
         if finished_naturally and not self._stopped_by_user:
             if self._current_source == 'playlist':
-                self._playlist_index += 1
-                if self._playlist_index < len(self._playlist):
+                if self._playlist.advance():
                     self.root.after(0, self._start_next_playlist_item)
                     return
             else:

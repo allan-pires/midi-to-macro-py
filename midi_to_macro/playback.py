@@ -1,5 +1,6 @@
 """Play back events as keyboard input using pynput."""
 
+import time
 from typing import Callable
 
 try:
@@ -26,7 +27,6 @@ def run_playback(
     """Run playback: sleep to time_ms then press modifiers + key. progress_callback(current_index, total)."""
     if not KEYBOARD_AVAILABLE:
         raise RuntimeError('pynput not available')
-    import time
     ctrl = Controller()
     total = len(events)
     t0 = time.perf_counter()
@@ -57,3 +57,30 @@ def run_playback(
             ctrl.release(Key.shift)
     if progress_callback:
         progress_callback(total, total)
+
+
+def run_playback_from_file(
+    path: str,
+    tempo_multiplier: float,
+    transpose: int,
+    is_playing: Callable[[], bool],
+    progress_callback: Callable[[int, int], None] | None = None,
+    done_callback: Callable[[bool], None] | None = None,
+) -> None:
+    """
+    Parse MIDI file and run playback in the current thread.
+    done_callback(finished_naturally) is called when playback ends (True if completed, False if stopped).
+    """
+    from midi_to_macro import midi
+    finished_naturally = False
+    try:
+        events = midi.parse_midi(path, tempo_multiplier=tempo_multiplier, transpose=transpose)
+        if progress_callback:
+            progress_callback(0, len(events))
+        run_playback(events, is_playing, progress_callback=progress_callback)
+        finished_naturally = True
+    except Exception:
+        raise
+    finally:
+        if done_callback:
+            done_callback(finished_naturally)
