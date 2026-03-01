@@ -61,13 +61,20 @@ def check_for_updates(timeout: float = 10.0) -> tuple[str | None, str | None, st
     body = (release.get("body") or "").strip() or None
     download_url = None
     assets = release.get("assets") or []
-    # Prefer .zip (onedir bundle) for "Download and run" — runs without temp extraction, avoids "Failed to load Python DLL"
+    # Prefer .exe for "Download and run"; fall back to .zip then any asset
     for a in assets:
         url = a.get("browser_download_url")
         name = (a.get("name") or "").lower()
-        if url and name.endswith(".zip"):
+        if url and name.endswith(".exe"):
             download_url = url
             break
+    if not download_url:
+        for a in assets:
+            url = a.get("browser_download_url")
+            name = (a.get("name") or "").lower()
+            if url and name.endswith(".zip"):
+                download_url = url
+                break
     if not download_url:
         for a in assets:
             url = a.get("browser_download_url")
