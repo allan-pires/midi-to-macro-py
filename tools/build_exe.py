@@ -26,11 +26,9 @@ def main():
         print("PyInstaller required: pip install pyinstaller")
         sys.exit(1)
 
-    # Hidden imports for dynamic theme and optional modules
+    # Hidden imports for dynamic/optional modules
     hidden = [
         "--hidden-import", "midi_to_macro.theme",
-        "--hidden-import", "midi_to_macro.theme_light",
-        "--hidden-import", "midi_to_macro.theme_loader",
         "--hidden-import", "midi_to_macro.icon_images",
     ]
 

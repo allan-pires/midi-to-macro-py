@@ -26,9 +26,9 @@ from midi_to_macro.sync import DEFAULT_PORT, Room, START_DELAY_SEC, get_lan_ip
 from midi_to_macro.updater import check_for_updates, download_update, is_newer, open_release_page
 from midi_to_macro.version import __version__ as APP_VERSION
 from midi_to_macro.window_focus import focus_process_window
-from midi_to_macro.theme_loader import get_theme, get_theme_name, set_theme
+from midi_to_macro import theme as _theme
 
-_t = get_theme()
+_t = _theme
 ACCENT = _t.ACCENT
 ACCENT_HOVER = _t.ACCENT_HOVER
 BG = _t.BG
@@ -67,7 +67,6 @@ ICON_STOP = _t.ICON_STOP
 ICON_STOP_HOST = _t.ICON_STOP_HOST
 ICON_BTN_WIDTH = _t.ICON_BTN_WIDTH
 ICON_UPDATE = _t.ICON_UPDATE
-ICON_THEME_SWITCH = _t.ICON_THEME_SWITCH
 LISTBOX_MIN_ROWS = _t.LISTBOX_MIN_ROWS
 OS_LISTBOX_MIN_ROWS = _t.OS_LISTBOX_MIN_ROWS
 PAD = _t.PAD
@@ -155,11 +154,8 @@ class App:
         self._icon_images_small = {}
         self._icon_images_large = {}
         try:
-            from midi_to_macro.icon_images import ICON_SIZE, ICON_SIZE_SMALL, ICON_SIZE_LARGE, get_all_theme_icons, get_theme_switch_icon
+            from midi_to_macro.icon_images import ICON_SIZE, ICON_SIZE_SMALL, ICON_SIZE_LARGE, get_all_theme_icons
             self._icon_images = get_all_theme_icons(ICON_SIZE)
-            ts_icon = get_theme_switch_icon(ICON_SIZE)
-            if ts_icon is not None:
-                self._icon_images['THEME_SWITCH'] = ts_icon
             self._icon_size = ICON_SIZE
             self._icon_images_small = get_all_theme_icons(ICON_SIZE_SMALL)
             self._icon_size_small = ICON_SIZE_SMALL
@@ -179,7 +175,6 @@ class App:
                 'HOST': ICON_HOST, 'PLAY': ICON_PLAY, 'RELOAD': ICON_RELOAD,
                 'REMOVE': ICON_REMOVE, 'SAVE': ICON_SAVE, 'SEARCH': ICON_SEARCH,
             'STOP': ICON_STOP, 'STOP_HOST': ICON_STOP_HOST,
-            'THEME_SWITCH': ICON_THEME_SWITCH,
             'UPDATE': ICON_UPDATE,
         }
             base = dict(
@@ -216,13 +211,6 @@ class App:
         tk.Label(header, text='Where Songs Meet', font=TITLE_FONT, fg=ACCENT, bg=BG).pack(side='left', anchor='w')
         header_btns = tk.Frame(header, bg=BG)
         header_btns.pack(side='right')
-        self._theme_btn = tk.Button(
-            header_btns, command=self._switch_theme,
-            **_icon_btn_kwargs('THEME_SWITCH', bg=BG, activebackground=BG)
-        )
-        self._theme_btn.pack(side='right', padx=(0, BTN_GAP))
-        self._theme_btn.bind('<Enter>', lambda e: self._theme_btn.configure(bg=ACCENT))
-        self._theme_btn.bind('<Leave>', lambda e: self._theme_btn.configure(bg=BG))
         self._update_btn = tk.Button(
             header_btns, command=self._check_for_updates,
             **_icon_btn_kwargs('UPDATE', bg=BG, activebackground=BG)
@@ -874,19 +862,6 @@ class App:
         self._room.on_disconnected = on_disconnected
         self._room.on_play_file = on_play_file
         self._room.on_play_os = on_play_os
-
-    def _switch_theme(self):
-        """Save opposite theme and restart the app so the new theme applies."""
-        current = get_theme_name()
-        new = 'light' if current == 'dark' else 'dark'
-        set_theme(new)
-        # Restart with same command (e.g. python main.py)
-        subprocess.Popen(
-            [sys.executable] + sys.argv,
-            cwd=os.getcwd(),
-        )
-        self.root.destroy()
-        sys.exit(0)
 
     def _check_for_updates(self):
         """Run update check in a background thread and show result on main thread."""

@@ -102,10 +102,3 @@ def get_all_theme_icons(size: int = ICON_SIZE) -> dict[str, "PhotoImage"]:
         if photo is not None:
             result[name] = photo
     return result
-
-
-def get_theme_switch_icon(size: int = ICON_SIZE) -> "PhotoImage | None":
-    """Return a color PhotoImage for the theme switch button (sun/moon from current theme)."""
-    from midi_to_macro.theme_loader import get_theme
-    char = get_theme().ICON_THEME_SWITCH
-    return get_icon_image(char, size)

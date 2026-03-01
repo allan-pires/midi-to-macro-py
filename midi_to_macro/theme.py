@@ -61,5 +61,3 @@ ICON_DISCONNECT = '❌'
 ICON_DOWNLOAD = '💾'
 ICON_SAVE = '💾'
 ICON_UPDATE = '🔄'
-# Theme switch: show sun in dark theme (click to switch to light), moon in light theme (click to switch to dark)
-ICON_THEME_SWITCH = '☀️'
