@@ -2,6 +2,8 @@
 
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -24,58 +26,61 @@ from midi_to_macro.sync import DEFAULT_PORT, Room, START_DELAY_SEC, get_lan_ip
 from midi_to_macro.updater import check_for_updates, download_update, is_newer, open_release_page
 from midi_to_macro.version import __version__ as APP_VERSION
 from midi_to_macro.window_focus import focus_process_window
-from midi_to_macro.theme import (
-    ACCENT,
-    ACCENT_HOVER,
-    BG,
-    BORDER,
-    BTN_PAD,
-    BTN_GAP,
-    BTN_GAP_TIGHT,
-    BTN_PAD_LARGE,
-    CARD,
-    CARD_BORDER,
-    ENTRY_BG,
-    ENTRY_FG,
-    FONT_FAMILY,
-    FG,
-    FG_DISABLED,
-    HINT_FONT,
-    HINT_WRAP,
-    ICON_ADD_LIST,
-    ICON_ADD_TO_PLAYLIST,
-    ICON_BROWSER,
-    ICON_CLEAR,
-    ICON_CONNECT,
-    ICON_DISCONNECT,
-    ICON_DOWNLOAD,
-    ICON_FAV,
-    ICON_FAV_OFF,
-    ICON_FOLDER,
-    ICON_FONT,
-    ICON_HOST,
-    ICON_PLAY,
-    ICON_RELOAD,
-    ICON_REMOVE,
-    ICON_SAVE,
-    ICON_SEARCH,
-    ICON_STOP,
-    ICON_STOP_HOST,
-    LABEL_FONT,
-    ICON_BTN_WIDTH,
-    ICON_UPDATE,
-    LISTBOX_MIN_ROWS,
-    OS_LISTBOX_MIN_ROWS,
-    PAD,
-    PLAY_GREEN,
-    PLAY_GREEN_HOVER,
-    SMALL_FONT,
-    SMALL_PAD,
-    STOP_RED,
-    STOP_RED_HOVER,
-    SUBTLE,
-    TITLE_FONT,
-)
+from midi_to_macro.theme_loader import get_theme, get_theme_name, set_theme
+
+_t = get_theme()
+ACCENT = _t.ACCENT
+ACCENT_HOVER = _t.ACCENT_HOVER
+BG = _t.BG
+BORDER = _t.BORDER
+BTN_PAD = _t.BTN_PAD
+BTN_GAP = _t.BTN_GAP
+BTN_GAP_TIGHT = _t.BTN_GAP_TIGHT
+BTN_PAD_LARGE = _t.BTN_PAD_LARGE
+CARD = _t.CARD
+CARD_BORDER = _t.CARD_BORDER
+ENTRY_BG = _t.ENTRY_BG
+ENTRY_FG = _t.ENTRY_FG
+FONT_FAMILY = _t.FONT_FAMILY
+FG = _t.FG
+FG_DISABLED = _t.FG_DISABLED
+HINT_FONT = _t.HINT_FONT
+HINT_WRAP = _t.HINT_WRAP
+ICON_ADD_LIST = _t.ICON_ADD_LIST
+ICON_ADD_TO_PLAYLIST = _t.ICON_ADD_TO_PLAYLIST
+ICON_BROWSER = _t.ICON_BROWSER
+ICON_CLEAR = _t.ICON_CLEAR
+ICON_CONNECT = _t.ICON_CONNECT
+ICON_DISCONNECT = _t.ICON_DISCONNECT
+ICON_DOWNLOAD = _t.ICON_DOWNLOAD
+ICON_FAV = _t.ICON_FAV
+ICON_FAV_OFF = _t.ICON_FAV_OFF
+ICON_FOLDER = _t.ICON_FOLDER
+ICON_FONT = _t.ICON_FONT
+ICON_HOST = _t.ICON_HOST
+ICON_PLAY = _t.ICON_PLAY
+ICON_RELOAD = _t.ICON_RELOAD
+ICON_REMOVE = _t.ICON_REMOVE
+ICON_SAVE = _t.ICON_SAVE
+ICON_SEARCH = _t.ICON_SEARCH
+ICON_STOP = _t.ICON_STOP
+ICON_STOP_HOST = _t.ICON_STOP_HOST
+ICON_BTN_WIDTH = _t.ICON_BTN_WIDTH
+ICON_UPDATE = _t.ICON_UPDATE
+ICON_THEME_SWITCH = _t.ICON_THEME_SWITCH
+LISTBOX_MIN_ROWS = _t.LISTBOX_MIN_ROWS
+OS_LISTBOX_MIN_ROWS = _t.OS_LISTBOX_MIN_ROWS
+PAD = _t.PAD
+PLAY_GREEN = _t.PLAY_GREEN
+PLAY_GREEN_HOVER = _t.PLAY_GREEN_HOVER
+SMALL_FONT = _t.SMALL_FONT
+SMALL_PAD = _t.SMALL_PAD
+STOP_RED = _t.STOP_RED
+STOP_RED_HOVER = _t.STOP_RED_HOVER
+SUBTLE = _t.SUBTLE
+TAB_BG_UNSELECTED = _t.TAB_BG_UNSELECTED
+TITLE_FONT = _t.TITLE_FONT
+LABEL_FONT = _t.LABEL_FONT
 
 
 class App:
@@ -100,7 +105,7 @@ class App:
         style.configure('TNotebook', background=BG)
         style.configure(
             'TNotebook.Tab',
-            background=SUBTLE, foreground=FG, padding=[SMALL_PAD, 2]
+            background=TAB_BG_UNSELECTED, foreground=FG, padding=[SMALL_PAD, 2]
         )
         style.map(
             'TNotebook.Tab',
@@ -150,8 +155,11 @@ class App:
         self._icon_images_small = {}
         self._icon_images_large = {}
         try:
-            from midi_to_macro.icon_images import ICON_SIZE, ICON_SIZE_SMALL, ICON_SIZE_LARGE, get_all_theme_icons
+            from midi_to_macro.icon_images import ICON_SIZE, ICON_SIZE_SMALL, ICON_SIZE_LARGE, get_all_theme_icons, get_theme_switch_icon
             self._icon_images = get_all_theme_icons(ICON_SIZE)
+            ts_icon = get_theme_switch_icon(ICON_SIZE)
+            if ts_icon is not None:
+                self._icon_images['THEME_SWITCH'] = ts_icon
             self._icon_size = ICON_SIZE
             self._icon_images_small = get_all_theme_icons(ICON_SIZE_SMALL)
             self._icon_size_small = ICON_SIZE_SMALL
@@ -171,6 +179,7 @@ class App:
                 'HOST': ICON_HOST, 'PLAY': ICON_PLAY, 'RELOAD': ICON_RELOAD,
                 'REMOVE': ICON_REMOVE, 'SAVE': ICON_SAVE, 'SEARCH': ICON_SEARCH,
             'STOP': ICON_STOP, 'STOP_HOST': ICON_STOP_HOST,
+            'THEME_SWITCH': ICON_THEME_SWITCH,
             'UPDATE': ICON_UPDATE,
         }
             base = dict(
@@ -198,14 +207,24 @@ class App:
                 base['text'] = key_to_char.get(icon_key, '')
                 base['font'] = ICON_FONT
                 base['width'] = ICON_BTN_WIDTH if not small else 2
+                base['height'] = 2 if not large else 2  # keep icon buttons same height when text fallback
             base.update(overrides)
             return base
 
         header = tk.Frame(root, bg=BG)
         header.pack(fill='x', padx=PAD, pady=(PAD, 2))
         tk.Label(header, text='Where Songs Meet', font=TITLE_FONT, fg=ACCENT, bg=BG).pack(side='left', anchor='w')
+        header_btns = tk.Frame(header, bg=BG)
+        header_btns.pack(side='right')
+        self._theme_btn = tk.Button(
+            header_btns, command=self._switch_theme,
+            **_icon_btn_kwargs('THEME_SWITCH', bg=BG, activebackground=BG)
+        )
+        self._theme_btn.pack(side='right', padx=(0, BTN_GAP))
+        self._theme_btn.bind('<Enter>', lambda e: self._theme_btn.configure(bg=ACCENT))
+        self._theme_btn.bind('<Leave>', lambda e: self._theme_btn.configure(bg=BG))
         self._update_btn = tk.Button(
-            header, command=self._check_for_updates,
+            header_btns, command=self._check_for_updates,
             **_icon_btn_kwargs('UPDATE', bg=BG, activebackground=BG)
         )
         self._update_btn.pack(side='right')
@@ -856,6 +875,19 @@ class App:
         self._room.on_play_file = on_play_file
         self._room.on_play_os = on_play_os
 
+    def _switch_theme(self):
+        """Save opposite theme and restart the app so the new theme applies."""
+        current = get_theme_name()
+        new = 'light' if current == 'dark' else 'dark'
+        set_theme(new)
+        # Restart with same command (e.g. python main.py)
+        subprocess.Popen(
+            [sys.executable] + sys.argv,
+            cwd=os.getcwd(),
+        )
+        self.root.destroy()
+        sys.exit(0)
+
     def _check_for_updates(self):
         """Run update check in a background thread and show result on main thread."""
         self._update_btn.config(state='disabled')
@@ -924,14 +956,44 @@ class App:
                 path = download_update(download_url)
                 if path:
                     try:
-                        if os.name == 'nt':
-                            os.startfile(path)
+                        if os.name == 'nt' and getattr(sys, 'frozen', False):
+                            # Replace current exe with new one, then run it
+                            current_exe = sys.executable
+                            # Batch: wait for this process to exit, copy new exe over current, start it
+                            def q(s: str) -> str:
+                                return s.replace('"', '""')
+                            batch = f'''@echo off
+set "ME=%~f0"
+timeout /t 2 /nobreak >nul
+copy /Y "{q(path)}" "{q(current_exe)}"
+start "" "{q(current_exe)}"
+del "{q(path)}"
+start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
+'''
+                            fd, batch_path = tempfile.mkstemp(suffix='.bat', text=True)
+                            try:
+                                os.write(fd, batch.encode('utf-8'))
+                                os.close(fd)
+                                subprocess.Popen(
+                                    ['cmd', '/c', batch_path],
+                                    creationflags=subprocess.CREATE_NO_WINDOW,
+                                )
+                            except Exception:
+                                os.close(fd)
+                                os.unlink(batch_path)
+                                raise
+                            top.destroy()
+                            self.root.quit()
                         else:
-                            import subprocess
-                            subprocess.run(['xdg-open', path], check=False)
+                            if os.name == 'nt':
+                                os.startfile(path)
+                            else:
+                                subprocess.run(['xdg-open', path], check=False)
+                            top.destroy()
+                            self.root.quit()
                     except Exception:
                         messagebox.showinfo('Downloaded', f'Saved to: {path}')
-                    top.destroy()
+                        top.destroy()
                 else:
                     messagebox.showerror('Download failed', 'Could not download the update.')
 
