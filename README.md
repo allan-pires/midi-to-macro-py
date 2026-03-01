@@ -1,4 +1,4 @@
-# MIDI → .mcr (Windows)
+# Where Songs Meet (Windows)
 
 Convert MIDI files to macro (.mcr) command files and optionally play them directly with keyboard simulation.
 
@@ -18,8 +18,8 @@ python main.py
 ```
 
 ### Using the Executable
-- Download `midi-to-mcr.exe` from the dist folder
-- The app will automatically prompt for Administrator privileges (required for keyboard simulation with games)
+- Download the executable from the dist folder (e.g. `midi-to-mcr.exe`)
+- The app **Where Songs Meet** will prompt for Administrator privileges when needed (for keyboard simulation with games)
 
 ## Requirements
 - Python 3.8+ (if running from source)

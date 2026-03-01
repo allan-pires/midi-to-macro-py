@@ -1,4 +1,4 @@
-"""MIDI to macro converter: parse MIDI, export .mcr, play with keyboard."""
+"""Where Songs Meet: parse MIDI, export .mcr, play with keyboard."""
 
 from midi_to_macro.midi import (
     build_mcr_lines,

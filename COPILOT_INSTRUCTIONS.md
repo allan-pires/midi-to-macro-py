@@ -1,5 +1,5 @@
 ## What I need
-A windows program that converts MIDI files (.mid) into macro commands (.mcr) for playing musical instruments in games like Where Winds Meet.
+A windows program **Where Songs Meet** that converts MIDI files (.mid) into macro commands (.mcr) for playing musical instruments in games like Where Winds Meet.
 The program should allow to play macro keys directly or export it to a .mcr file to use a third party app.
 The program should have a clean and responsive UI.
 

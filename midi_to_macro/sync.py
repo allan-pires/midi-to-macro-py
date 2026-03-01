@@ -8,7 +8,7 @@ import time
 from typing import Callable
 
 DEFAULT_PORT = 38472
-START_DELAY_SEC = 2.0
+START_DELAY_SEC = 3.0  # longer delay so clients have time to receive and clocks align better
 
 
 def get_lan_ip() -> str:
@@ -39,8 +39,8 @@ class Room:
         self._lock = threading.Lock()
         self._running = False
 
-        self.on_play_file: Callable[[float, bytes, float, int], None] | None = None
-        self.on_play_os: Callable[[float, str, float, int], None] | None = None
+        self.on_play_file: Callable[[float, bytes, float, int, float | None], None] | None = None
+        self.on_play_os: Callable[[float, str, float, int, float | None], None] | None = None
         self.on_clients_changed: Callable[[int], None] | None = None
         self.on_connected: Callable[[], None] | None = None
         self.on_disconnected: Callable[[], None] | None = None
@@ -177,6 +177,7 @@ class Room:
 
     def _handle_message(self, msg: dict):
         cmd = msg.get('cmd')
+        host_send_time = msg.get('host_send_time')  # host's time.time() when sending; clients use for sync
         if cmd == 'play_file' and self.on_play_file:
             try:
                 start_in = float(msg.get('start_in_sec', START_DELAY_SEC))
@@ -184,7 +185,7 @@ class Room:
                 midi_bytes = base64.b64decode(b64)
                 tempo = float(msg.get('tempo', 1.0))
                 transpose = int(msg.get('transpose', 0))
-                self.on_play_file(start_in, midi_bytes, tempo, transpose)
+                self.on_play_file(start_in, midi_bytes, tempo, transpose, host_send_time)
             except (TypeError, ValueError):
                 pass
         elif cmd == 'play_os' and self.on_play_os:
@@ -193,7 +194,7 @@ class Room:
                 sid = str(msg.get('sid', ''))
                 tempo = float(msg.get('tempo', 1.0))
                 transpose = int(msg.get('transpose', 0))
-                self.on_play_os(start_in, sid, tempo, transpose)
+                self.on_play_os(start_in, sid, tempo, transpose, host_send_time)
             except (TypeError, ValueError):
                 pass
 
@@ -217,9 +218,11 @@ class Room:
         """Host only: broadcast play file to all clients."""
         if not self.is_host():
             return
+        host_send_time = time.time()
         payload = {
             'cmd': 'play_file',
             'start_in_sec': start_in_sec,
+            'host_send_time': host_send_time,
             'midi_base64': base64.b64encode(midi_bytes).decode('ascii'),
             'tempo': tempo,
             'transpose': transpose,
@@ -241,9 +244,11 @@ class Room:
         """Host only: broadcast play OS sequence to all clients."""
         if not self.is_host():
             return
+        host_send_time = time.time()
         payload = {
             'cmd': 'play_os',
             'start_in_sec': start_in_sec,
+            'host_send_time': host_send_time,
             'sid': sid,
             'tempo': tempo,
             'transpose': transpose,

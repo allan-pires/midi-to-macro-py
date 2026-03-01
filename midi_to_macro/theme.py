@@ -19,17 +19,38 @@ BORDER = '#414868'
 
 # Typography
 FONT_FAMILY = 'Segoe UI'
-TITLE_FONT = (FONT_FAMILY, 14, 'bold')
-LABEL_FONT = (FONT_FAMILY, 10)
-SMALL_FONT = (FONT_FAMILY, 9)
+TITLE_FONT = (FONT_FAMILY, 12, 'bold')
+LABEL_FONT = (FONT_FAMILY, 9)
+SMALL_FONT = (FONT_FAMILY, 8)
 HINT_FONT = (FONT_FAMILY, 8)
 
 # Spacing (use PAD for section gaps, SMALL_PAD for related elements)
-PAD = 12
-SMALL_PAD = 6
-BTN_PAD = (8, 2)  # Compact to align with Combobox/Entry height
+PAD = 8
+SMALL_PAD = 4
+BTN_PAD = (4, 0)
+BTN_GAP = 4  # gap between icon buttons
+ICON_BTN_WIDTH = 2  # width in chars for icon-only buttons (uniform size)
 
-# Layout
-LISTBOX_MIN_ROWS = 10
-OS_LISTBOX_MIN_ROWS = 12
-HINT_WRAP = 420
+# Layout (taller, thinner window: more listbox rows, narrower wrap)
+LISTBOX_MIN_ROWS = 8
+OS_LISTBOX_MIN_ROWS = 8
+HINT_WRAP = 280
+
+# Button icons (Unicode; use with tooltip for hover hint)
+ICON_PLAY = '▶'
+ICON_STOP = '■'
+ICON_FOLDER = '📁'
+ICON_ADD_LIST = '⊕'
+ICON_ADD_TO_PLAYLIST = '➕'  # add current file/sequence to playlist
+ICON_FAV = '★'
+ICON_FAV_OFF = '☆'
+ICON_SEARCH = '⌕'
+ICON_RELOAD = '↻'
+ICON_BROWSER = '🌐'
+ICON_REMOVE = '−'
+ICON_CLEAR = '✕'
+ICON_HOST = '◉'
+ICON_CONNECT = '⚡'
+ICON_DISCONNECT = '✕'
+ICON_DOWNLOAD = '↓'
+ICON_SAVE = '💾'
