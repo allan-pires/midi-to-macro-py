@@ -11,6 +11,7 @@ Convert MIDI files to macro (.mcr) command files and play them as keyboard input
 - **Playlist tab** — Queue songs from File or Online Sequencer and play in order
 - **Play together** — Host or join a room; when the host presses Play, everyone starts in sync
 - **Chord support** — Simultaneous key presses with correct modifier handling (Shift/Ctrl for black keys)
+- **Check for updates** — Button in the header checks GitHub releases and can open the release page or download and run the latest build
 
 ## Installation
 
@@ -95,6 +96,8 @@ The app may need to run as Administrator so keyboard input reaches games. Window
   - **`online_sequencer.py`** — Fetch/search sequences, download MIDI  
   - **`app.py`** — Tkinter GUI  
   - **`theme.py`** — UI constants  
+  - **`version.py`** — App version and GitHub repo for update checks  
+  - **`updater.py`** — Fetch latest release, compare version, open/download update  
   - **`admin.py`**, **`window_focus.py`** — Windows helpers  
 
 Tests: `pytest tests/`

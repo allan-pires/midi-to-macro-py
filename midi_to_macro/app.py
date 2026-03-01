@@ -21,6 +21,8 @@ from midi_to_macro.os_favorites import OsFavorites
 from midi_to_macro.playlist import Playlist
 from midi_to_macro.song_settings import SongSettings
 from midi_to_macro.sync import DEFAULT_PORT, Room, START_DELAY_SEC, get_lan_ip
+from midi_to_macro.updater import check_for_updates, download_update, is_newer, open_release_page
+from midi_to_macro.version import __version__ as APP_VERSION
 from midi_to_macro.window_focus import focus_process_window
 from midi_to_macro.theme import (
     ACCENT,
@@ -175,7 +177,15 @@ class App:
 
         header = tk.Frame(root, bg=BG)
         header.pack(fill='x', padx=PAD, pady=(PAD, 2))
-        tk.Label(header, text='Where Songs Meet', font=TITLE_FONT, fg=ACCENT, bg=BG).pack(anchor='w')
+        tk.Label(header, text='Where Songs Meet', font=TITLE_FONT, fg=ACCENT, bg=BG).pack(side='left', anchor='w')
+        self._update_btn = tk.Button(
+            header, text='Check for updates', command=self._check_for_updates,
+            font=SMALL_FONT, bg=SUBTLE, fg=FG, activebackground=ACCENT, activeforeground=FG,
+            relief='flat', padx=SMALL_PAD, pady=2, cursor='hand2'
+        )
+        self._update_btn.pack(side='right')
+        self._update_btn.bind('<Enter>', lambda e: self._update_btn.configure(bg=ACCENT))
+        self._update_btn.bind('<Leave>', lambda e: self._update_btn.configure(bg=SUBTLE))
 
         # Notebook: File tab + Online Sequencer tab
         notebook = ttk.Notebook(root)
@@ -788,6 +798,84 @@ class App:
         self._room.on_disconnected = on_disconnected
         self._room.on_play_file = on_play_file
         self._room.on_play_os = on_play_os
+
+    def _check_for_updates(self):
+        """Run update check in a background thread and show result on main thread."""
+        self._update_btn.config(state='disabled')
+        if hasattr(self, 'status'):
+            self.status.config(text='Checking for updates…')
+
+        def do_check():
+            result = check_for_updates()
+            self.root.after(0, lambda: self._on_update_check_done(result))
+
+        threading.Thread(target=do_check, daemon=True).start()
+
+    def _on_update_check_done(self, result):
+        latest_version, html_url, body, download_url = result
+        self._update_btn.config(state='normal')
+        if hasattr(self, 'status'):
+            self.status.config(text='Ready — focus the game window before playing')
+        if latest_version is None:
+            messagebox.showerror('Update check failed', 'Could not check for updates. Check your connection.')
+            return
+        if not is_newer(latest_version):
+            messagebox.showinfo('Up to date', f'You have the latest version (v{APP_VERSION}).')
+            return
+        self._show_update_dialog(latest_version, html_url, body, download_url)
+
+    def _show_update_dialog(self, latest_version: str, html_url: str, body: str | None, download_url: str | None):
+        top = tk.Toplevel(self.root)
+        top.title('Update available')
+        top.configure(bg=BG)
+        top.transient(self.root)
+        top.grab_set()
+        frame = tk.Frame(top, bg=BG, padx=PAD, pady=PAD)
+        frame.pack(fill='both', expand=True)
+        tk.Label(
+            frame,
+            text=f'Version {latest_version} is available (you have v{APP_VERSION}).',
+            font=LABEL_FONT, fg=FG, bg=BG, wraplength=320,
+        ).pack(anchor='w')
+        if body:
+            notes = tk.Text(
+                frame, height=6, wrap='word', font=SMALL_FONT,
+                fg=FG, bg=CARD, relief='flat', padx=4, pady=4,
+            )
+            notes.pack(fill='both', expand=True, pady=(SMALL_PAD, 0))
+            notes.insert('1.0', body[:1000] + ('…' if len(body) > 1000 else ''))
+            notes.config(state='disabled')
+        btn_frame = tk.Frame(frame, bg=BG)
+        btn_frame.pack(fill='x', pady=(PAD, 0))
+        btn_style = dict(
+            font=LABEL_FONT, bg=SUBTLE, fg=FG,
+            activebackground=ACCENT, activeforeground=FG,
+            relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1], cursor='hand2',
+        )
+
+        def open_page():
+            open_release_page(html_url)
+
+        tk.Button(btn_frame, text='Open release page', command=open_page, **btn_style).pack(side='left', padx=(0, BTN_GAP))
+        if download_url:
+
+            def download_and_run():
+                path = download_update(download_url)
+                if path:
+                    try:
+                        if os.name == 'nt':
+                            os.startfile(path)
+                        else:
+                            import subprocess
+                            subprocess.run(['xdg-open', path], check=False)
+                    except Exception:
+                        messagebox.showinfo('Downloaded', f'Saved to: {path}')
+                    top.destroy()
+                else:
+                    messagebox.showerror('Download failed', 'Could not download the update.')
+
+            tk.Button(btn_frame, text='Download and run', command=download_and_run, **btn_style).pack(side='left', padx=(0, BTN_GAP))
+        tk.Button(btn_frame, text='Close', command=top.destroy, **btn_style).pack(side='left')
 
     def _sync_update_host_status(self, n: int):
         if not self._room.is_host():
