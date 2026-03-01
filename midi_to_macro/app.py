@@ -928,13 +928,14 @@ class App:
         if download_url:
 
             def download_and_run():
-                path = download_update(download_url)
+                # Save to Downloads so the exe runs from a stable path (avoids "Failed to load Python DLL" from temp)
+                save_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+                path = download_update(download_url, save_dir=save_dir)
                 if path:
                     try:
                         if os.name == 'nt' and getattr(sys, 'frozen', False):
                             # Replace current exe with new one, then run it
                             current_exe = sys.executable
-                            # Batch: wait for this process to exit, copy new exe over current, start it
                             def q(s: str) -> str:
                                 return s.replace('"', '""')
                             batch = f'''@echo off

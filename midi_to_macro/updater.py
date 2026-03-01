@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import tempfile
 import urllib.error
@@ -83,11 +84,16 @@ def open_release_page(url: str) -> None:
     webbrowser.open(url)
 
 
-def download_update(download_url: str, timeout: float = 60.0) -> str | None:
+def download_update(
+    download_url: str,
+    timeout: float = 60.0,
+    save_dir: str | None = None,
+) -> str | None:
     """
-    Download the update file to a temp file. Returns the path to the downloaded file,
-    or None on failure. Caller is responsible for running the file (e.g. os.startfile) and
-    optionally cleaning up.
+    Download the update file. Returns the path to the downloaded file, or None on failure.
+    If save_dir is None, saves to a temp file (caller can run or clean up).
+    If save_dir is set (e.g. Downloads), saves there with the asset filename so the exe
+    runs from a stable path (avoids "Failed to load Python DLL" when run from temp).
     """
     if not download_url:
         return None
@@ -103,11 +109,22 @@ def download_update(download_url: str, timeout: float = 60.0) -> str | None:
             data = resp.read()
     except (urllib.error.URLError, OSError, ValueError):
         return None
-    # Infer extension from URL
-    path = download_url.split("/")[-1].split("?")[0] or "update"
-    if not path.endswith(".exe") and not path.endswith(".msi"):
-        path = path + ".exe"
-    fd, path = tempfile.mkstemp(suffix="_" + path)
+    # Infer filename from URL
+    filename = download_url.split("/")[-1].split("?")[0] or "update"
+    if not filename.endswith(".exe") and not filename.endswith(".msi"):
+        filename = filename + ".exe"
+
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        path = os.path.join(save_dir, filename)
+        try:
+            with open(path, "wb") as f:
+                f.write(data)
+            return path
+        except OSError:
+            return None
+
+    fd, path = tempfile.mkstemp(suffix="_" + filename)
     try:
         with open(fd, "wb") as f:
             f.write(data)

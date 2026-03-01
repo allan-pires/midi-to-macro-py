@@ -19,6 +19,10 @@ def main():
     icon_path = os.path.join(root, "where-songs-meet.ico")
     icon_arg = ["--icon", icon_path] if os.path.isfile(icon_path) else []
 
+    # DPI-aware manifest (sharp rendering on high-DPI; v1.0.3 had this)
+    manifest_path = os.path.join(root, "manifest.xml")
+    manifest_arg = ["--manifest", manifest_path] if os.path.isfile(manifest_path) else []
+
     # Ensure PyInstaller is available
     try:
         import PyInstaller.__main__
@@ -42,6 +46,7 @@ def main():
             "--noconfirm",
         ]
         + icon_arg
+        + manifest_arg
         + hidden
         + [entry]
     )
