@@ -138,6 +138,41 @@ class App:
             btn.bind('<Enter>', lambda e: status_widget.config(text=hint))
             btn.bind('<Leave>', lambda e: status_widget.config(text=''))
 
+        self._icon_images = {}
+        try:
+            from midi_to_macro.icon_images import ICON_SIZE, get_all_theme_icons
+            self._icon_images = get_all_theme_icons(ICON_SIZE)
+            self._icon_size = ICON_SIZE
+        except Exception:
+            self._icon_size = 22
+
+        def _icon_btn_kwargs(icon_key: str, **overrides):
+            key_to_char = {
+                'ADD_LIST': ICON_ADD_LIST, 'ADD_TO_PLAYLIST': ICON_ADD_TO_PLAYLIST,
+                'BROWSER': ICON_BROWSER, 'CLEAR': ICON_CLEAR, 'CONNECT': ICON_CONNECT,
+                'DISCONNECT': ICON_DISCONNECT, 'DOWNLOAD': ICON_DOWNLOAD,
+                'FAV': ICON_FAV, 'FAV_OFF': ICON_FAV_OFF, 'FOLDER': ICON_FOLDER,
+                'HOST': ICON_HOST, 'PLAY': ICON_PLAY, 'RELOAD': ICON_RELOAD,
+                'REMOVE': ICON_REMOVE, 'SAVE': ICON_SAVE, 'SEARCH': ICON_SEARCH,
+                'STOP': ICON_STOP,
+            }
+            base = dict(
+                bg=SUBTLE, fg=FG, activebackground=ENTRY_BG, activeforeground=FG,
+                relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1], cursor='hand2',
+            )
+            img = self._icon_images.get(icon_key)
+            if img:
+                base['image'] = img
+                base['text'] = ''
+                base['width'] = self._icon_size
+                base['height'] = self._icon_size
+            else:
+                base['text'] = key_to_char.get(icon_key, '')
+                base['font'] = ICON_FONT
+                base['width'] = ICON_BTN_WIDTH
+            base.update(overrides)
+            return base
+
         header = tk.Frame(root, bg=BG)
         header.pack(fill='x', padx=PAD, pady=(PAD, 2))
         tk.Label(header, text='Where Songs Meet', font=TITLE_FONT, fg=ACCENT, bg=BG).pack(anchor='w')
@@ -167,10 +202,8 @@ class App:
         self.folder_label.grid(row=1, column=0, sticky='ew', padx=(0, 8))
         file_inner.columnconfigure(0, weight=1)
         open_folder_btn = tk.Button(
-            file_inner, text=ICON_FOLDER, command=self.open_folder,
-            font=ICON_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
-            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            file_inner, command=self.open_folder,
+            **_icon_btn_kwargs('FOLDER')
         )
         open_folder_btn.grid(row=1, column=1, sticky='e')
         open_folder_btn.bind('<Enter>', lambda e: open_folder_btn.configure(bg=ACCENT))
@@ -178,10 +211,8 @@ class App:
         tk.Label(file_inner, text='MIDI file', font=LABEL_FONT, fg=FG, bg=CARD).grid(
             row=2, column=0, sticky='w', pady=(PAD, SMALL_PAD))
         add_to_playlist_file_btn = tk.Button(
-            file_inner, text=ICON_ADD_TO_PLAYLIST, command=self._add_file_to_playlist,
-            font=ICON_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
-            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            file_inner, command=self._add_file_to_playlist,
+            **_icon_btn_kwargs('ADD_TO_PLAYLIST')
         )
         add_to_playlist_file_btn.grid(row=2, column=1, sticky='e')
         add_to_playlist_file_btn.bind('<Enter>', lambda e: add_to_playlist_file_btn.configure(bg=ACCENT))
@@ -275,20 +306,15 @@ class App:
         actions = tk.Frame(file_tab, bg=CARD)
         actions.pack(fill='x', padx=PAD, pady=(0, 2))
         self.play_btn = tk.Button(
-            actions, text=ICON_PLAY, command=self.play,
-            font=ICON_FONT, bg=PLAY_GREEN, fg=BG, activebackground=PLAY_GREEN_HOVER,
-            activeforeground=BG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            actions, command=self.play,
+            **_icon_btn_kwargs('PLAY', bg=PLAY_GREEN, fg=BG, activebackground=PLAY_GREEN_HOVER, activeforeground=BG)
         )
         self.play_btn.grid(row=0, column=0, padx=(0, BTN_GAP))
         self.play_btn.bind('<Enter>', lambda e: self.play_btn.configure(bg=PLAY_GREEN_HOVER))
         self.play_btn.bind('<Leave>', lambda e: self.play_btn.configure(bg=PLAY_GREEN))
         self.stop_btn = tk.Button(
-            actions, text=ICON_STOP, command=self.stop, state='disabled',
-            font=ICON_FONT, bg=SUBTLE, fg=FG, disabledforeground=FG_DISABLED,
-            activebackground=STOP_RED_HOVER, activeforeground=FG,
-            relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            actions, command=self.stop, state='disabled',
+            **_icon_btn_kwargs('STOP', disabledforeground=FG_DISABLED, activebackground=STOP_RED_HOVER, activeforeground=FG)
         )
         self.stop_btn.grid(row=0, column=1, padx=(0, BTN_GAP))
         def _stop_enter(e):
@@ -358,46 +384,36 @@ class App:
         self.os_sort_menu.set('Newest')
         self.os_sequences: list[tuple[str, str]] = []
         load_btn = tk.Button(
-            os_toolbar_btns, text=ICON_RELOAD, command=self._load_sequences,
-            font=ICON_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
-            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            os_toolbar_btns, command=self._load_sequences,
+            **_icon_btn_kwargs('RELOAD')
         )
         load_btn.pack(side='left', padx=(0, BTN_GAP))
         load_btn.bind('<Enter>', lambda e: load_btn.configure(bg=ACCENT))
         load_btn.bind('<Leave>', lambda e: load_btn.configure(bg=SUBTLE))
         os_open_btn = tk.Button(
-            os_toolbar_btns, text=ICON_BROWSER, command=self._open_selected_sequence,
-            font=ICON_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
-            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            os_toolbar_btns, command=self._open_selected_sequence,
+            **_icon_btn_kwargs('BROWSER')
         )
         os_open_btn.pack(side='left', padx=(0, BTN_GAP))
         os_open_btn.bind('<Enter>', lambda e: os_open_btn.configure(bg=ACCENT))
         os_open_btn.bind('<Leave>', lambda e: os_open_btn.configure(bg=SUBTLE))
         os_fav_btn = tk.Button(
-            os_toolbar_btns, text=ICON_FAV, command=self._os_add_to_favorites,
-            font=ICON_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
-            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            os_toolbar_btns, command=self._os_add_to_favorites,
+            **_icon_btn_kwargs('FAV')
         )
         os_fav_btn.pack(side='left', padx=(0, BTN_GAP))
         os_fav_btn.bind('<Enter>', lambda e: os_fav_btn.configure(bg=ACCENT))
         os_fav_btn.bind('<Leave>', lambda e: os_fav_btn.configure(bg=SUBTLE))
         os_unfav_btn = tk.Button(
-            os_toolbar_btns, text=ICON_FAV_OFF, command=self._os_remove_from_favorites,
-            font=ICON_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
-            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            os_toolbar_btns, command=self._os_remove_from_favorites,
+            **_icon_btn_kwargs('FAV_OFF')
         )
         os_unfav_btn.pack(side='left', padx=(0, BTN_GAP))
         os_unfav_btn.bind('<Enter>', lambda e: os_unfav_btn.configure(bg=ACCENT))
         os_unfav_btn.bind('<Leave>', lambda e: os_unfav_btn.configure(bg=SUBTLE))
         os_add_playlist_btn = tk.Button(
-            os_toolbar_btns, text=ICON_ADD_TO_PLAYLIST, command=self._add_os_to_playlist,
-            font=ICON_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
-            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            os_toolbar_btns, command=self._add_os_to_playlist,
+            **_icon_btn_kwargs('ADD_TO_PLAYLIST')
         )
         os_add_playlist_btn.pack(side='left', padx=(0, BTN_GAP))
         os_add_playlist_btn.bind('<Enter>', lambda e: os_add_playlist_btn.configure(bg=ACCENT))
@@ -418,10 +434,8 @@ class App:
         os_search_entry.grid(row=0, column=1, padx=(0, 8), sticky='ew')
         os_search_frame.columnconfigure(1, weight=1)
         os_search_btn = tk.Button(
-            os_search_frame, text=ICON_SEARCH, command=self._search_sequences,
-            font=ICON_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
-            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            os_search_frame, command=self._search_sequences,
+            **_icon_btn_kwargs('SEARCH')
         )
         os_search_btn.grid(row=0, column=2, sticky='e')
         os_search_btn.bind('<Enter>', lambda e: os_search_btn.configure(bg=ACCENT))
@@ -532,29 +546,22 @@ class App:
         os_actions = tk.Frame(os_tab, bg=CARD)
         os_actions.pack(fill='x', padx=PAD, pady=(SMALL_PAD, 2))
         os_download_btn = tk.Button(
-            os_actions, text=ICON_DOWNLOAD, command=self._download_os_midi,
-            font=ICON_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
-            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            os_actions, command=self._download_os_midi,
+            **_icon_btn_kwargs('DOWNLOAD')
         )
         os_download_btn.grid(row=0, column=0, padx=(0, BTN_GAP))
         os_download_btn.bind('<Enter>', lambda e: os_download_btn.configure(bg=ACCENT))
         os_download_btn.bind('<Leave>', lambda e: os_download_btn.configure(bg=SUBTLE))
         self.os_play_btn = tk.Button(
-            os_actions, text=ICON_PLAY, command=self._load_and_play_sequence,
-            font=ICON_FONT, bg=PLAY_GREEN, fg=BG, activebackground=PLAY_GREEN_HOVER,
-            activeforeground=BG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            os_actions, command=self._load_and_play_sequence,
+            **_icon_btn_kwargs('PLAY', bg=PLAY_GREEN, fg=BG, activebackground=PLAY_GREEN_HOVER, activeforeground=BG)
         )
         self.os_play_btn.grid(row=0, column=1, padx=(0, BTN_GAP))
         self.os_play_btn.bind('<Enter>', lambda e: self.os_play_btn.configure(bg=PLAY_GREEN_HOVER))
         self.os_play_btn.bind('<Leave>', lambda e: self.os_play_btn.configure(bg=PLAY_GREEN))
         self.os_stop_btn = tk.Button(
-            os_actions, text=ICON_STOP, command=self.stop, state='disabled',
-            font=ICON_FONT, bg=SUBTLE, fg=FG, disabledforeground=FG_DISABLED,
-            activebackground=STOP_RED_HOVER, activeforeground=FG,
-            relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            os_actions, command=self.stop, state='disabled',
+            **_icon_btn_kwargs('STOP', disabledforeground=FG_DISABLED, activebackground=STOP_RED_HOVER, activeforeground=FG)
         )
         self.os_stop_btn.grid(row=0, column=2, padx=(0, BTN_GAP))
         def _os_stop_enter(e):
@@ -607,38 +614,29 @@ class App:
         pl_toolbar = tk.Frame(pl_inner, bg=CARD)
         pl_toolbar.pack(fill='x', pady=(2, SMALL_PAD))
         pl_remove_btn = tk.Button(
-            pl_toolbar, text=ICON_REMOVE, command=self._remove_from_playlist,
-            font=ICON_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
-            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            pl_toolbar, command=self._remove_from_playlist,
+            **_icon_btn_kwargs('REMOVE')
         )
         pl_remove_btn.grid(row=0, column=0, padx=(0, BTN_GAP))
         pl_remove_btn.bind('<Enter>', lambda e: pl_remove_btn.configure(bg=ACCENT))
         pl_remove_btn.bind('<Leave>', lambda e: pl_remove_btn.configure(bg=SUBTLE))
         pl_clear_btn = tk.Button(
-            pl_toolbar, text=ICON_CLEAR, command=self._clear_playlist,
-            font=ICON_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
-            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            pl_toolbar, command=self._clear_playlist,
+            **_icon_btn_kwargs('CLEAR')
         )
         pl_clear_btn.grid(row=0, column=1, padx=(0, BTN_GAP))
         pl_clear_btn.bind('<Enter>', lambda e: pl_clear_btn.configure(bg=ACCENT))
         pl_clear_btn.bind('<Leave>', lambda e: pl_clear_btn.configure(bg=SUBTLE))
         self.pl_play_btn = tk.Button(
-            pl_toolbar, text=ICON_PLAY, command=self._play_playlist,
-            font=ICON_FONT, bg=PLAY_GREEN, fg=BG, activebackground=PLAY_GREEN_HOVER,
-            activeforeground=BG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            pl_toolbar, command=self._play_playlist,
+            **_icon_btn_kwargs('PLAY', bg=PLAY_GREEN, fg=BG, activebackground=PLAY_GREEN_HOVER, activeforeground=BG)
         )
         self.pl_play_btn.grid(row=0, column=2, padx=(0, BTN_GAP))
         self.pl_play_btn.bind('<Enter>', lambda e: self.pl_play_btn.configure(bg=PLAY_GREEN_HOVER))
         self.pl_play_btn.bind('<Leave>', lambda e: self.pl_play_btn.configure(bg=PLAY_GREEN))
         self.pl_stop_btn = tk.Button(
-            pl_toolbar, text=ICON_STOP, command=self.stop, state='disabled',
-            font=ICON_FONT, bg=SUBTLE, fg=FG, disabledforeground=FG_DISABLED,
-            activebackground=STOP_RED_HOVER, activeforeground=FG,
-            relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            pl_toolbar, command=self.stop, state='disabled',
+            **_icon_btn_kwargs('STOP', disabledforeground=FG_DISABLED, activebackground=STOP_RED_HOVER, activeforeground=FG)
         )
         self.pl_stop_btn.grid(row=0, column=3, padx=(0, BTN_GAP))
         def _pl_stop_enter(e):
@@ -710,19 +708,15 @@ class App:
         )
         sync_port_entry.grid(row=0, column=1, padx=(0, BTN_GAP), sticky='w')
         self.sync_host_btn = tk.Button(
-            host_frame, text=ICON_HOST, command=self._sync_start_host,
-            font=ICON_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
-            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            host_frame, command=self._sync_start_host,
+            **_icon_btn_kwargs('HOST')
         )
         self.sync_host_btn.grid(row=0, column=2, padx=(0, BTN_GAP))
         self.sync_host_btn.bind('<Enter>', lambda e: self.sync_host_btn.configure(bg=ACCENT))
         self.sync_host_btn.bind('<Leave>', lambda e: self.sync_host_btn.configure(bg=SUBTLE))
         self.sync_stop_host_btn = tk.Button(
-            host_frame, text=ICON_STOP, command=self._sync_stop_host, state='disabled',
-            font=ICON_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
-            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            host_frame, command=self._sync_stop_host, state='disabled',
+            **_icon_btn_kwargs('STOP')
         )
         self.sync_stop_host_btn.grid(row=0, column=3, padx=(0, BTN_GAP))
         self.sync_stop_host_btn.bind('<Enter>', lambda e: self.sync_stop_host_btn.configure(bg=ACCENT))
@@ -749,19 +743,15 @@ class App:
         sync_join_entry.grid(row=0, column=1, padx=(0, BTN_GAP), sticky='ew')
         join_frame.columnconfigure(1, weight=1)
         self.sync_join_btn = tk.Button(
-            join_frame, text=ICON_CONNECT, command=self._sync_join,
-            font=ICON_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
-            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            join_frame, command=self._sync_join,
+            **_icon_btn_kwargs('CONNECT')
         )
         self.sync_join_btn.grid(row=0, column=2, padx=(0, BTN_GAP))
         self.sync_join_btn.bind('<Enter>', lambda e: self.sync_join_btn.configure(bg=ACCENT))
         self.sync_join_btn.bind('<Leave>', lambda e: self.sync_join_btn.configure(bg=SUBTLE))
         self.sync_disconnect_btn = tk.Button(
-            join_frame, text=ICON_DISCONNECT, command=self._sync_disconnect, state='disabled',
-            font=ICON_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
-            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
-            width=ICON_BTN_WIDTH, cursor='hand2'
+            join_frame, command=self._sync_disconnect, state='disabled',
+            **_icon_btn_kwargs('DISCONNECT')
         )
         self.sync_disconnect_btn.grid(row=0, column=3, padx=(0, BTN_GAP))
         self.sync_disconnect_btn.bind('<Enter>', lambda e: self.sync_disconnect_btn.configure(bg=ACCENT))
