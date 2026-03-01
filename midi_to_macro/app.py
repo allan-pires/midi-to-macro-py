@@ -86,8 +86,8 @@ class App:
         self.playing = False
 
         root.configure(bg=BG)
-        root.minsize(340, 580)
-        root.geometry('360x620')
+        root.minsize(380, 700)
+        root.geometry('440x820')
         root.option_add('*Font', LABEL_FONT)
         root.option_add('*Background', BG)
         root.option_add('*Foreground', FG)
