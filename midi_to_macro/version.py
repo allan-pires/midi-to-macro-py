@@ -1,6 +1,6 @@
 """Application version and update configuration."""
 
-__version__ = "1.0.4"
+__version__ = "1.0.6"
 
 # GitHub repo for update checks: "owner/repo"
 GITHUB_REPO = "allan-pires/where-songs-meet"
