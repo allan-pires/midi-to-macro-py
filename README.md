@@ -24,7 +24,8 @@ python main.py
 
 ### Executable
 
-- Run the executable from the `dist` folder (e.g. `midi-to-mcr.exe`)
+- **Build locally:** `pip install -r requirements-build.txt` then `python tools/build_exe.py`. The executable is created at `dist/where-songs-meet.exe`.
+- Run the executable from the `dist` folder (e.g. `where-songs-meet.exe`)
 - **Where Songs Meet** may request Administrator privileges for keyboard simulation (needed for games)
 
 ## Requirements
@@ -86,6 +87,8 @@ The app may need to run as Administrator so keyboard input reaches games. Window
 ## Project structure (development)
 
 - **`main.py`** — Entry point; requests admin then starts the GUI  
+- **`tools/build_exe.py`** — Build single-file Windows exe (PyInstaller)  
+- **`.github/workflows/release.yml`** — On push of tag `v*`, builds exe and creates a GitHub release  
 - **`midi_to_macro/`** — Core package  
   - **`midi.py`** — Parse MIDI, map notes to keys, build .mcr lines, export  
   - **`playback.py`** — Run playback from events or file (pynput)  
@@ -101,3 +104,9 @@ The app may need to run as Administrator so keyboard input reaches games. Window
   - **`admin.py`**, **`window_focus.py`** — Windows helpers  
 
 Tests: `pytest tests/`
+
+### Creating a release
+
+1. Bump `__version__` in `midi_to_macro/version.py`.
+2. Commit, then push a tag: `git tag v1.0.4 && git push origin v1.0.4`.
+3. GitHub Actions builds the Windows exe and creates a release with `where-songs-meet.exe` attached.
