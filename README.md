@@ -24,7 +24,7 @@ python main.py
 
 ### Executable
 
-- **Build locally:** `pip install -r requirements-build.txt` then `python tools/build_exe.py`. Output: folder `dist/where-songs-meet/` and `dist/where-songs-meet.zip`. Run `dist/where-songs-meet/where-songs-meet.exe` (keep the folder as-is; the exe needs the DLLs beside it).
+- **Build locally:** `pip install -r requirements-build.txt` then `python tools/build_exe.py`. Output: `dist/where-songs-meet.exe`. Run that executable.
 - **Where Songs Meet** may request Administrator privileges for keyboard simulation (needed for games)
 
 ## Requirements
@@ -108,4 +108,4 @@ Tests: `pytest tests/`
 
 1. Bump `__version__` in `midi_to_macro/version.py`.
 2. Commit, then push a tag: `git tag v1.0.4 && git push origin v1.0.4`.
-3. GitHub Actions builds the Windows app (onedir), zips it, and creates a release with `where-songs-meet.zip` attached. “Download and run” in the app fetches the zip, extracts it, and runs the exe from the folder so it finds all DLLs (avoids “Failed to load Python DLL”).
+3. GitHub Actions builds the Windows exe and creates a release with `where-songs-meet.exe` attached. “Download and run” in the app fetches the zip, extracts it, and runs the exe from the folder so it finds all DLLs (avoids “Failed to load Python DLL”).

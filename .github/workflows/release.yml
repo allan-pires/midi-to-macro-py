@@ -64,6 +64,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag_name }}
-          files: dist/where-songs-meet.zip
+          files: dist/where-songs-meet.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

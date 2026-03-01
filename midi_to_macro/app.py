@@ -765,12 +765,12 @@ class App:
         host_row1 = tk.Frame(host_inner, bg=CARD)
         host_row1.pack(fill='x')
         tk.Label(host_row1, text='Host', font=LABEL_FONT, fg=FG, bg=CARD, width=6, anchor='w').pack(side='left', padx=(0, BTN_GAP))
-        self.sync_port_var = tk.StringVar(value=str(DEFAULT_PORT))
-        sync_port_entry = tk.Entry(
-            host_row1, textvariable=self.sync_port_var, width=16,
+        self.sync_host_var = tk.StringVar(value=f'{get_lan_ip()}:{DEFAULT_PORT}')
+        sync_host_entry = tk.Entry(
+            host_row1, textvariable=self.sync_host_var, width=22,
             font=LABEL_FONT, bg=ENTRY_BG, fg=ENTRY_FG, relief='flat', highlightthickness=0
         )
-        sync_port_entry.pack(side='left', padx=(0, BTN_GAP))
+        sync_host_entry.pack(side='left', fill='x', expand=True, padx=(0, BTN_GAP))
         host_btns = tk.Frame(host_inner, bg=CARD)
         host_btns.pack(fill='x', pady=(SMALL_PAD, 0))
         self.sync_host_btn = tk.Button(
@@ -978,11 +978,18 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         if not self._room.is_host():
             return
         addr = get_lan_ip()
-        self.sync_host_status.config(text=f'Room: {addr}:{self.sync_port_var.get()}  —  {n} participant(s)')
+        s = self.sync_host_var.get().strip()
+        port = s.rsplit(':', 1)[-1] if ':' in s else str(DEFAULT_PORT)
+        self.sync_host_var.set(f'{addr}:{port}')
+        self.sync_host_status.config(text=f'  —  {n} participant(s)')
 
     def _sync_start_host(self):
+        s = self.sync_host_var.get().strip()
+        if ':' not in s:
+            messagebox.showwarning('Invalid address', 'Enter IP:port (e.g. 192.168.1.5:38472)')
+            return
         try:
-            port = int(self.sync_port_var.get().strip())
+            port = int(s.rsplit(':', 1)[1].strip())
         except ValueError:
             messagebox.showwarning('Invalid port', 'Enter a number for the port.')
             return
@@ -993,7 +1000,8 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         if actual == 0:
             messagebox.showerror('Host failed', 'Could not start the room (port in use?).')
             return
-        self.sync_port_var.set(str(actual))
+        addr = get_lan_ip()
+        self.sync_host_var.set(f'{addr}:{actual}')
         self.sync_host_btn.config(state='disabled')
         self.sync_stop_host_btn.config(state='normal')
         self.sync_join_btn.config(state='disabled')
@@ -1003,6 +1011,7 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
 
     def _sync_stop_host(self):
         self._room.stop_host()
+        self.sync_host_var.set(f'{get_lan_ip()}:{DEFAULT_PORT}')
         self.sync_host_btn.config(state='normal')
         self.sync_stop_host_btn.config(state='disabled')
         self.sync_join_btn.config(state='normal')
