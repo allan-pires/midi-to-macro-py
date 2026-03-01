@@ -1,92 +1,100 @@
 # Where Songs Meet (Windows)
 
-Convert MIDI files to macro (.mcr) command files and optionally play them directly with keyboard simulation.
+Convert MIDI files to macro (.mcr) command files and play them as keyboard input in real time. Includes support for local files, **onlinesequencer.net** sequences, a playlist, and synced “play together” rooms.
 
 ## Features
-- **Export to .mcr**: Convert MIDI files to macro format with proper timing and key mappings
-- **Live Playback**: Play MIDI notes as keyboard input in real-time using pynput
-- **Tempo Control**: Speed up or slow down playback independently
-- **Transposition**: Shift notes up or down by semitones
-- **Chord Support**: Handle simultaneous key presses naturally
+
+- **Live playback** — MIDI notes are sent as keyboard input via pynput
+- **Tempo & transpose** — Speed up/slow down and shift notes by semitones; settings can be saved per song
+- **File tab** — Open a folder of .mid/.midi files and play or add to playlist
+- **Online Sequencer tab** — Browse and search onlinesequencer.net, download MIDI, add to favorites or playlist
+- **Playlist tab** — Queue songs from File or Online Sequencer and play in order
+- **Play together** — Host or join a room; when the host presses Play, everyone starts in sync
+- **Chord support** — Simultaneous key presses with correct modifier handling (Shift/Ctrl for black keys)
 
 ## Installation
 
-### From Source
+### From source
+
 ```bash
 pip install -r requirements.txt
 python main.py
 ```
 
-### Using the Executable
-- Download the executable from the dist folder (e.g. `midi-to-mcr.exe`)
-- The app **Where Songs Meet** will prompt for Administrator privileges when needed (for keyboard simulation with games)
+### Executable
+
+- Run the executable from the `dist` folder (e.g. `midi-to-mcr.exe`)
+- **Where Songs Meet** may request Administrator privileges for keyboard simulation (needed for games)
 
 ## Requirements
-- Python 3.8+ (if running from source)
-- `mido` - MIDI file parsing
-- `pynput` - Keyboard simulation
+
+- Python 3.8+ (when running from source)
+- **mido** — MIDI file parsing
+- **pynput** — Keyboard simulation
 
 ## Usage
 
-### GUI Controls
-1. **Open folder**: Select a folder containing .mid/.midi files, then pick one from the list
-2. **Tempo ×**: Multiply note timing (>1.0 = slower, <1.0 = faster)
-3. **Transpose**: Shift all notes by semitones
-4. **Export .mcr**: Save as macro file
-5. **Play (keyboard)**: Simulate the macro keys in real-time
-6. **Stop**: Stop playback
+### GUI tabs
 
-### Key Mappings
-The tool maps MIDI notes to game keys by **pitch class** (note % 12) and **row by range**:
-- **Low row** (notes < 60): Z, X, C, V, B, N, M
-- **Mid row** (60–71): A, S, D, F, G, H, J
-- **High row** (72+): Q, W, E, R, T, Y, U
+1. **File** — Choose a folder, select a MIDI file. Use **Tempo ×** and **Transpose**, then **Play** or **Add to playlist**. Optionally save tempo/transpose for the selected song.
+2. **Online Sequencer** — Load or search sequences from onlinesequencer.net. Download, play, or add to playlist; manage favorites (★).
+3. **Playlist** — Play queued songs in order. Add/remove/clear; play or stop from this tab.
+4. **Play together** — **Host**: set port and start; **Join**: enter host:port. Host selects music and presses Play; clients start in sync.
 
-Notes below 0 or above 95 are clamped. So low melodies use the low row, middle register the mid row, and high notes the high row.
+### Key mappings
 
-Black keys use Shift (or Ctrl for D# on the low row). Notes outside the range are clamped to the nearest mapped note. Use **Transpose** to shift octaves.
+Notes are mapped by **pitch class** (note % 12) and **row by range**:
 
-## Macro File Format
-Exported .mcr files contain keyboard commands:
-```
-DELAY : 100
-Keyboard : Q : KeyDown
-Keyboard : Q : KeyUp
-DELAY : 200
-Keyboard : ShiftLeft : KeyDown
-Keyboard : Q : KeyDown
-Keyboard : Q : KeyUp
-Keyboard : ShiftLeft : KeyUp
-```
+- **Low row** (notes &lt; 60): Z, X, C, V, B, N, M  
+- **Mid row** (60–71): A, S, D, F, G, H, J  
+- **High row** (72+): Q, W, E, R, T, Y, U  
 
-## Important Notes
+Notes outside 0–95 are clamped. Black keys use **Shift** (or **Ctrl** for D♯ on the low row). Use **Transpose** to shift octaves.
 
-### Admin Privileges Required
-The executable requires Administrator privileges to send keyboard input to games. Windows will automatically prompt when launching.
+## Important notes
 
-### Game Compatibility
-- Works with applications that accept standard Windows keyboard input (Notepad, Word, etc.)
-- May not work with games that use anti-cheat systems or raw input filtering
-- Tested with Where Winds Meet (requires admin mode)
+### Administrator privileges
+
+The app may need to run as Administrator so keyboard input reaches games. Windows will prompt when required.
+
+### Game compatibility
+
+- Works with standard Windows keyboard input (Notepad, browsers, many games)
+- May not work with anti-cheat or raw-input-only games
+- Tested with Where Winds Meet (admin mode)
 
 ### Performance
-- Key holds are optimized for game responsiveness (~20ms per note)
-- Timing is calculated from absolute MIDI positions to ensure accurate playback
-- Chord notes (simultaneous key presses) are synchronized for proper sound
+
+- Timing is derived from MIDI positions for accurate playback
+- Chords use synchronized key down/up; a short delay after modifiers helps game registration
 
 ## Troubleshooting
 
-**Keys not recognized by game?**
-- Ensure the app is running as Administrator
-- Focus the game window before clicking Run
-- Some games may reject simulated input regardless
+**Keys not recognized in game?**  
+- Run as Administrator and focus the game window before Play  
+- Some games block simulated input
 
-**Chord timing sounds off?**
-- This is a limitation of simulated input - timing may not be pixel-perfect
-- Real-time hardware macro devices may provide better results
+**Play together: others can’t connect?**  
+- Allow the app in Windows Firewall (Private network)  
+- Use the host’s LAN IP and the port shown (e.g. `192.168.0.1:38472`)
 
-**MIDI not loading?**
-- Ensure the file is a valid standard MIDI file (.mid or .midi)
-- Check that all tracks are properly formatted
+**MIDI not loading?**  
+- Use valid .mid or .midi files  
+- For Online Sequencer, check your connection and try another sequence
 
+## Project structure (development)
 
+- **`main.py`** — Entry point; requests admin then starts the GUI  
+- **`midi_to_macro/`** — Core package  
+  - **`midi.py`** — Parse MIDI, map notes to keys, build .mcr lines, export  
+  - **`playback.py`** — Run playback from events or file (pynput)  
+  - **`sync.py`** — Room (host/join), LAN IP, play-together protocol  
+  - **`song_settings.py`** — Per-song tempo/transpose persistence  
+  - **`os_favorites.py`** — Online Sequencer favorites persistence  
+  - **`playlist.py`** — Playlist state (file/OS items, index)  
+  - **`online_sequencer.py`** — Fetch/search sequences, download MIDI  
+  - **`app.py`** — Tkinter GUI  
+  - **`theme.py`** — UI constants  
+  - **`admin.py`**, **`window_focus.py`** — Windows helpers  
+
+Tests: `pytest tests/`
