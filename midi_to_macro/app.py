@@ -34,6 +34,7 @@ from midi_to_macro.theme import (
     BTN_GAP_TIGHT,
     BTN_PAD_LARGE,
     CARD,
+    CARD_BORDER,
     ENTRY_BG,
     ENTRY_FG,
     FONT_FAMILY,
@@ -59,6 +60,7 @@ from midi_to_macro.theme import (
     ICON_SAVE,
     ICON_SEARCH,
     ICON_STOP,
+    ICON_STOP_HOST,
     LABEL_FONT,
     ICON_BTN_WIDTH,
     ICON_UPDATE,
@@ -168,7 +170,7 @@ class App:
                 'FAV': ICON_FAV, 'FAV_OFF': ICON_FAV_OFF, 'FOLDER': ICON_FOLDER,
                 'HOST': ICON_HOST, 'PLAY': ICON_PLAY, 'RELOAD': ICON_RELOAD,
                 'REMOVE': ICON_REMOVE, 'SAVE': ICON_SAVE, 'SEARCH': ICON_SEARCH,
-            'STOP': ICON_STOP,
+            'STOP': ICON_STOP, 'STOP_HOST': ICON_STOP_HOST,
             'UPDATE': ICON_UPDATE,
         }
             base = dict(
@@ -737,33 +739,32 @@ class App:
         _tooltip(repeat_pl_btn, self.pl_status, 'When finished, play playlist again from the beginning')
 
         # ---- Tab 4: Play together ----
-        sync_tab = tk.Frame(notebook, bg=CARD)
+        sync_tab = tk.Frame(notebook, bg=BG)
         notebook.add(sync_tab, text='  Play together  ')
-        sync_frame = tk.LabelFrame(
-            sync_tab, text='  Room  ', font=LABEL_FONT,
-            fg=SUBTLE, bg=CARD, labelanchor='n'
+        sync_frame = tk.Frame(sync_tab, bg=BG)
+        sync_frame.pack(fill='both', expand=True, padx=PAD, pady=(0, PAD))
+        # Intro
+        sync_intro = tk.Label(
+            sync_frame,
+            text='Host or join a room — when the host presses Play, everyone starts together.',
+            font=LABEL_FONT, fg=FG, bg=BG, justify='left', wraplength=320
         )
-        sync_frame.pack(fill='both', expand=True, padx=PAD, pady=(0, SMALL_PAD))
-        sync_inner = tk.Frame(sync_frame, bg=CARD)
-        sync_inner.pack(fill='both', expand=True, padx=PAD, pady=(2, SMALL_PAD))
-        tk.Label(
-            sync_inner,
-            text='Host or join a room — when the host\npresses Play, everyone starts together.',
-            font=LABEL_FONT, fg=FG, bg=CARD, justify='left'
-        ).pack(anchor='w', pady=(0, SMALL_PAD))
-        # Host
-        host_frame = tk.Frame(sync_inner, bg=CARD)
-        host_frame.pack(fill='x', pady=(PAD, 2))
-        host_line1 = tk.Frame(host_frame, bg=CARD)
-        host_line1.pack(fill='x')
-        tk.Label(host_line1, text='Host', font=LABEL_FONT, fg=FG, bg=CARD, width=6, anchor='w').pack(side='left', padx=(0, BTN_GAP))
+        sync_intro.pack(anchor='w', pady=(PAD, PAD))
+        # Host block
+        host_card = tk.Frame(sync_frame, bg=CARD, highlightbackground=CARD_BORDER, highlightthickness=1)
+        host_card.pack(fill='x', pady=(0, SMALL_PAD))
+        host_inner = tk.Frame(host_card, bg=CARD)
+        host_inner.pack(fill='x', padx=PAD, pady=PAD)
+        host_row1 = tk.Frame(host_inner, bg=CARD)
+        host_row1.pack(fill='x')
+        tk.Label(host_row1, text='Host', font=LABEL_FONT, fg=FG, bg=CARD, width=6, anchor='w').pack(side='left', padx=(0, BTN_GAP))
         self.sync_port_var = tk.StringVar(value=str(DEFAULT_PORT))
         sync_port_entry = tk.Entry(
-            host_line1, textvariable=self.sync_port_var, width=16,
+            host_row1, textvariable=self.sync_port_var, width=16,
             font=LABEL_FONT, bg=ENTRY_BG, fg=ENTRY_FG, relief='flat', highlightthickness=0
         )
         sync_port_entry.pack(side='left', padx=(0, BTN_GAP))
-        host_btns = tk.Frame(host_frame, bg=CARD)
+        host_btns = tk.Frame(host_inner, bg=CARD)
         host_btns.pack(fill='x', pady=(SMALL_PAD, 0))
         self.sync_host_btn = tk.Button(
             host_btns, command=self._sync_start_host,
@@ -774,7 +775,7 @@ class App:
         self.sync_host_btn.bind('<Leave>', lambda e: self.sync_host_btn.configure(bg=CARD))
         self.sync_stop_host_btn = tk.Button(
             host_btns, command=self._sync_stop_host, state='disabled',
-            **_icon_btn_kwargs('STOP')
+            **_icon_btn_kwargs('STOP_HOST')
         )
         self.sync_stop_host_btn.pack(side='left', padx=(0, BTN_GAP))
         self.sync_stop_host_btn.bind('<Enter>', lambda e: self.sync_stop_host_btn.configure(bg=ACCENT))
@@ -783,26 +784,35 @@ class App:
             host_btns, text='', font=SMALL_FONT, fg=SUBTLE, bg=CARD
         )
         self.sync_host_status.pack(side='left', padx=(PAD, 0))
+        sync_host_tooltip = tk.Label(host_btns, text='', font=SMALL_FONT, fg=SUBTLE, bg=CARD)
+        sync_host_tooltip.pack(side='left', padx=(PAD, 0))
         self.sync_firewall_hint = tk.Label(
-            sync_inner,
-            text='If others can\'t connect: allow this app\nin Windows Firewall (Private).',
-            font=HINT_FONT, fg=SUBTLE, bg=CARD, justify='left'
+            host_inner,
+            text='If others can\'t connect: allow this app in Windows Firewall (Private).',
+            font=HINT_FONT, fg=SUBTLE, bg=CARD, justify='left', wraplength=300
         )
-        self.sync_firewall_hint.pack(anchor='w', pady=(0, SMALL_PAD))
-        # Join
-        join_frame = tk.Frame(sync_inner, bg=CARD)
-        join_frame.pack(fill='x', pady=(2, PAD))
-        join_line1 = tk.Frame(join_frame, bg=CARD)
-        join_line1.pack(fill='x')
-        tk.Label(join_line1, text='Join', font=LABEL_FONT, fg=FG, bg=CARD, width=6, anchor='w').pack(side='left', padx=(0, BTN_GAP))
+        self.sync_firewall_hint.pack(anchor='w', pady=(SMALL_PAD, 0))
+        # Join block
+        join_card = tk.Frame(sync_frame, bg=CARD, highlightbackground=CARD_BORDER, highlightthickness=1)
+        join_card.pack(fill='x', pady=(SMALL_PAD, 0))
+        join_inner = tk.Frame(join_card, bg=CARD)
+        join_inner.pack(fill='x', padx=PAD, pady=PAD)
+        join_row1 = tk.Frame(join_inner, bg=CARD)
+        join_row1.pack(fill='x')
+        tk.Label(join_row1, text='Join', font=LABEL_FONT, fg=FG, bg=CARD, width=6, anchor='w').pack(side='left', padx=(0, BTN_GAP))
         self.sync_join_var = tk.StringVar(value='')
         sync_join_entry = tk.Entry(
-            join_line1, textvariable=self.sync_join_var, width=16,
+            join_row1, textvariable=self.sync_join_var, width=16,
             font=LABEL_FONT, bg=ENTRY_BG, fg=ENTRY_FG, relief='flat', highlightthickness=0
         )
         sync_join_entry.pack(side='left', fill='x', expand=True, padx=(0, BTN_GAP))
-        join_btns = tk.Frame(join_frame, bg=CARD)
-        join_btns.pack(fill='x', pady=(SMALL_PAD, 0))
+        join_hint = tk.Label(
+            join_inner, text='e.g. 192.168.0.1:38472',
+            font=HINT_FONT, fg=SUBTLE, bg=CARD
+        )
+        join_hint.pack(anchor='w', pady=(2, SMALL_PAD))
+        join_btns = tk.Frame(join_inner, bg=CARD)
+        join_btns.pack(fill='x')
         self.sync_join_btn = tk.Button(
             join_btns, command=self._sync_join,
             **_icon_btn_kwargs('CONNECT')
@@ -817,17 +827,13 @@ class App:
         self.sync_disconnect_btn.pack(side='left', padx=(0, BTN_GAP))
         self.sync_disconnect_btn.bind('<Enter>', lambda e: self.sync_disconnect_btn.configure(bg=ACCENT))
         self.sync_disconnect_btn.bind('<Leave>', lambda e: self.sync_disconnect_btn.configure(bg=CARD))
-        tk.Label(
-            sync_inner, text='e.g. 192.168.0.1:38472',
-            font=HINT_FONT, fg=SUBTLE, bg=CARD
-        ).pack(anchor='w', pady=(0, 2))
         self.sync_status = tk.Label(
-            sync_inner, text='Not connected.',
+            join_btns, text='Not connected.',
             font=SMALL_FONT, fg=SUBTLE, bg=CARD
         )
-        self.sync_status.pack(anchor='w', pady=(0, PAD))
-        _tooltip(self.sync_host_btn, self.sync_status, 'Start hosting')
-        _tooltip(self.sync_stop_host_btn, self.sync_status, 'Stop hosting')
+        self.sync_status.pack(side='left', padx=(PAD, 0))
+        _tooltip(self.sync_host_btn, sync_host_tooltip, 'Start hosting')
+        _tooltip(self.sync_stop_host_btn, sync_host_tooltip, 'Stop hosting')
         _tooltip(self.sync_join_btn, self.sync_status, 'Connect')
         _tooltip(self.sync_disconnect_btn, self.sync_status, 'Disconnect')
         self._sync_register_room_callbacks()

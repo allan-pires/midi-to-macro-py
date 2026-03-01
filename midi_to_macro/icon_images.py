@@ -72,11 +72,13 @@ def get_all_theme_icons(size: int = ICON_SIZE) -> dict[str, "PhotoImage"]:
         ICON_SAVE,
         ICON_SEARCH,
         ICON_STOP,
+        ICON_STOP_HOST,
         ICON_UPDATE,
     )
     names_and_chars = [
         ("PLAY", ICON_PLAY),
         ("STOP", ICON_STOP),
+        ("STOP_HOST", ICON_STOP_HOST),
         ("FOLDER", ICON_FOLDER),
         ("ADD_LIST", ICON_ADD_LIST),
         ("ADD_TO_PLAYLIST", ICON_ADD_TO_PLAYLIST),
