@@ -31,6 +31,8 @@ from midi_to_macro.theme import (
     BORDER,
     BTN_PAD,
     BTN_GAP,
+    BTN_GAP_TIGHT,
+    BTN_PAD_LARGE,
     CARD,
     ENTRY_BG,
     ENTRY_FG,
@@ -59,6 +61,7 @@ from midi_to_macro.theme import (
     ICON_STOP,
     LABEL_FONT,
     ICON_BTN_WIDTH,
+    ICON_UPDATE,
     LISTBOX_MIN_ROWS,
     OS_LISTBOX_MIN_ROWS,
     PAD,
@@ -81,8 +84,8 @@ class App:
         self.playing = False
 
         root.configure(bg=BG)
-        root.minsize(340, 520)
-        root.geometry('360x560')
+        root.minsize(340, 580)
+        root.geometry('360x620')
         root.option_add('*Font', LABEL_FONT)
         root.option_add('*Background', BG)
         root.option_add('*Foreground', FG)
@@ -125,6 +128,7 @@ class App:
         # Repeat options and current playback source
         self.repeat_file = tk.BooleanVar(value=False)
         self.repeat_os = tk.BooleanVar(value=False)
+        self.repeat_playlist = tk.BooleanVar(value=False)
         self.save_file_var = tk.BooleanVar(value=False)
         self.save_os_var = tk.BooleanVar(value=False)
         self._current_source: str | None = None
@@ -141,14 +145,22 @@ class App:
             btn.bind('<Leave>', lambda e: status_widget.config(text=''))
 
         self._icon_images = {}
+        self._icon_images_small = {}
+        self._icon_images_large = {}
         try:
-            from midi_to_macro.icon_images import ICON_SIZE, get_all_theme_icons
+            from midi_to_macro.icon_images import ICON_SIZE, ICON_SIZE_SMALL, ICON_SIZE_LARGE, get_all_theme_icons
             self._icon_images = get_all_theme_icons(ICON_SIZE)
             self._icon_size = ICON_SIZE
+            self._icon_images_small = get_all_theme_icons(ICON_SIZE_SMALL)
+            self._icon_size_small = ICON_SIZE_SMALL
+            self._icon_images_large = get_all_theme_icons(ICON_SIZE_LARGE)
+            self._icon_size_large = ICON_SIZE_LARGE
         except Exception:
             self._icon_size = 22
+            self._icon_size_small = 18
+            self._icon_size_large = 28
 
-        def _icon_btn_kwargs(icon_key: str, **overrides):
+        def _icon_btn_kwargs(icon_key: str, small: bool = False, large: bool = False, **overrides):
             key_to_char = {
                 'ADD_LIST': ICON_ADD_LIST, 'ADD_TO_PLAYLIST': ICON_ADD_TO_PLAYLIST,
                 'BROWSER': ICON_BROWSER, 'CLEAR': ICON_CLEAR, 'CONNECT': ICON_CONNECT,
@@ -156,22 +168,34 @@ class App:
                 'FAV': ICON_FAV, 'FAV_OFF': ICON_FAV_OFF, 'FOLDER': ICON_FOLDER,
                 'HOST': ICON_HOST, 'PLAY': ICON_PLAY, 'RELOAD': ICON_RELOAD,
                 'REMOVE': ICON_REMOVE, 'SAVE': ICON_SAVE, 'SEARCH': ICON_SEARCH,
-                'STOP': ICON_STOP,
-            }
+            'STOP': ICON_STOP,
+            'UPDATE': ICON_UPDATE,
+        }
             base = dict(
-                bg=SUBTLE, fg=FG, activebackground=ENTRY_BG, activeforeground=FG,
+                bg=CARD, fg=FG, activebackground=CARD, activeforeground=FG,
                 relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1], cursor='hand2',
             )
-            img = self._icon_images.get(icon_key)
+            if large:
+                icon_set = self._icon_images_large
+                size = self._icon_size_large
+                base['padx'] = BTN_PAD_LARGE[0]
+                base['pady'] = BTN_PAD_LARGE[1]
+            elif small:
+                icon_set = self._icon_images_small
+                size = self._icon_size_small
+            else:
+                icon_set = self._icon_images
+                size = self._icon_size
+            img = icon_set.get(icon_key)
             if img:
                 base['image'] = img
                 base['text'] = ''
-                base['width'] = self._icon_size
-                base['height'] = self._icon_size
+                base['width'] = size
+                base['height'] = size
             else:
                 base['text'] = key_to_char.get(icon_key, '')
                 base['font'] = ICON_FONT
-                base['width'] = ICON_BTN_WIDTH
+                base['width'] = ICON_BTN_WIDTH if not small else 2
             base.update(overrides)
             return base
 
@@ -179,13 +203,12 @@ class App:
         header.pack(fill='x', padx=PAD, pady=(PAD, 2))
         tk.Label(header, text='Where Songs Meet', font=TITLE_FONT, fg=ACCENT, bg=BG).pack(side='left', anchor='w')
         self._update_btn = tk.Button(
-            header, text='Check for updates', command=self._check_for_updates,
-            font=SMALL_FONT, bg=SUBTLE, fg=FG, activebackground=ACCENT, activeforeground=FG,
-            relief='flat', padx=SMALL_PAD, pady=2, cursor='hand2'
+            header, command=self._check_for_updates,
+            **_icon_btn_kwargs('UPDATE', bg=BG, activebackground=BG)
         )
         self._update_btn.pack(side='right')
         self._update_btn.bind('<Enter>', lambda e: self._update_btn.configure(bg=ACCENT))
-        self._update_btn.bind('<Leave>', lambda e: self._update_btn.configure(bg=SUBTLE))
+        self._update_btn.bind('<Leave>', lambda e: self._update_btn.configure(bg=BG))
 
         # Notebook: File tab + Online Sequencer tab
         notebook = ttk.Notebook(root)
@@ -217,16 +240,16 @@ class App:
         )
         open_folder_btn.grid(row=1, column=1, sticky='e')
         open_folder_btn.bind('<Enter>', lambda e: open_folder_btn.configure(bg=ACCENT))
-        open_folder_btn.bind('<Leave>', lambda e: open_folder_btn.configure(bg=SUBTLE))
+        open_folder_btn.bind('<Leave>', lambda e: open_folder_btn.configure(bg=CARD))
         tk.Label(file_inner, text='MIDI file', font=LABEL_FONT, fg=FG, bg=CARD).grid(
             row=2, column=0, sticky='w', pady=(PAD, SMALL_PAD))
         add_to_playlist_file_btn = tk.Button(
             file_inner, command=self._add_file_to_playlist,
-            **_icon_btn_kwargs('ADD_TO_PLAYLIST')
+            **_icon_btn_kwargs('ADD_TO_PLAYLIST', small=True)
         )
         add_to_playlist_file_btn.grid(row=2, column=1, sticky='e')
         add_to_playlist_file_btn.bind('<Enter>', lambda e: add_to_playlist_file_btn.configure(bg=ACCENT))
-        add_to_playlist_file_btn.bind('<Leave>', lambda e: add_to_playlist_file_btn.configure(bg=SUBTLE))
+        add_to_playlist_file_btn.bind('<Leave>', lambda e: add_to_playlist_file_btn.configure(bg=CARD))
         list_frame = tk.Frame(file_inner, bg=CARD)
         list_frame.grid(row=3, column=0, columnspan=2, sticky='nsew', pady=(0, SMALL_PAD))
         file_inner.rowconfigure(3, weight=1)
@@ -317,22 +340,24 @@ class App:
         actions.pack(fill='x', padx=PAD, pady=(0, 2))
         self.play_btn = tk.Button(
             actions, command=self.play,
-            **_icon_btn_kwargs('PLAY', bg=PLAY_GREEN, fg=BG, activebackground=PLAY_GREEN_HOVER, activeforeground=BG)
+            **_icon_btn_kwargs('PLAY', large=True, fg=BG, activeforeground=BG, activebackground=PLAY_GREEN_HOVER)
         )
-        self.play_btn.grid(row=0, column=0, padx=(0, BTN_GAP))
+        self.play_btn.grid(row=0, column=0, padx=(0, BTN_GAP_TIGHT))
         self.play_btn.bind('<Enter>', lambda e: self.play_btn.configure(bg=PLAY_GREEN_HOVER))
-        self.play_btn.bind('<Leave>', lambda e: self.play_btn.configure(bg=PLAY_GREEN))
+        self.play_btn.bind('<Leave>', lambda e: self.play_btn.configure(bg=CARD))
         self.stop_btn = tk.Button(
             actions, command=self.stop, state='disabled',
-            **_icon_btn_kwargs('STOP', disabledforeground=FG_DISABLED, activebackground=STOP_RED_HOVER, activeforeground=FG)
+            **_icon_btn_kwargs('STOP', large=True, disabledforeground=FG_DISABLED, activebackground=STOP_RED_HOVER, activeforeground=FG)
         )
-        self.stop_btn.grid(row=0, column=1, padx=(0, BTN_GAP))
+        self.stop_btn.grid(row=0, column=1, padx=(0, BTN_GAP_TIGHT))
         def _stop_enter(e):
             if self.stop_btn['state'] == 'normal':
                 self.stop_btn.configure(bg=STOP_RED_HOVER)
         def _stop_leave(e):
             if self.stop_btn['state'] == 'normal':
                 self.stop_btn.configure(bg=STOP_RED)
+            else:
+                self.stop_btn.configure(bg=CARD)
         self.stop_btn.bind('<Enter>', _stop_enter)
         self.stop_btn.bind('<Leave>', _stop_leave)
         actions.columnconfigure(2, weight=1)
@@ -363,6 +388,7 @@ class App:
         )
         self.status.pack(anchor='w')
         _tooltip(open_folder_btn, self.status, 'Open folder')
+        _tooltip(self._update_btn, self.status, 'Check for updates')
         _tooltip(add_to_playlist_file_btn, self.status, 'Add to playlist')
         _tooltip(save_file_cb, self.status, 'Save tempo/transpose for this song')
         _tooltip(self.play_btn, self.status, 'Play')
@@ -385,49 +411,19 @@ class App:
         self.os_sort_menu = ttk.Combobox(
             os_toolbar,
             values=[label for _, label in SORT_OPTIONS],
-            state='readonly', width=12, font=LABEL_FONT
+            state='readonly', width=18, font=LABEL_FONT
         )
         self.os_sort_menu.grid(row=0, column=1, padx=(0, 8), sticky='ew')
         os_toolbar.columnconfigure(1, weight=1)
-        os_toolbar_btns = tk.Frame(os_toolbar, bg=CARD)
-        os_toolbar_btns.grid(row=0, column=2, sticky='w')
-        self.os_sort_menu.set('Newest')
-        self.os_sequences: list[tuple[str, str]] = []
         load_btn = tk.Button(
-            os_toolbar_btns, command=self._load_sequences,
+            os_toolbar, command=self._load_sequences,
             **_icon_btn_kwargs('RELOAD')
         )
-        load_btn.pack(side='left', padx=(0, BTN_GAP))
+        load_btn.grid(row=0, column=2, padx=(0, 0))
         load_btn.bind('<Enter>', lambda e: load_btn.configure(bg=ACCENT))
-        load_btn.bind('<Leave>', lambda e: load_btn.configure(bg=SUBTLE))
-        os_open_btn = tk.Button(
-            os_toolbar_btns, command=self._open_selected_sequence,
-            **_icon_btn_kwargs('BROWSER')
-        )
-        os_open_btn.pack(side='left', padx=(0, BTN_GAP))
-        os_open_btn.bind('<Enter>', lambda e: os_open_btn.configure(bg=ACCENT))
-        os_open_btn.bind('<Leave>', lambda e: os_open_btn.configure(bg=SUBTLE))
-        os_fav_btn = tk.Button(
-            os_toolbar_btns, command=self._os_add_to_favorites,
-            **_icon_btn_kwargs('FAV')
-        )
-        os_fav_btn.pack(side='left', padx=(0, BTN_GAP))
-        os_fav_btn.bind('<Enter>', lambda e: os_fav_btn.configure(bg=ACCENT))
-        os_fav_btn.bind('<Leave>', lambda e: os_fav_btn.configure(bg=SUBTLE))
-        os_unfav_btn = tk.Button(
-            os_toolbar_btns, command=self._os_remove_from_favorites,
-            **_icon_btn_kwargs('FAV_OFF')
-        )
-        os_unfav_btn.pack(side='left', padx=(0, BTN_GAP))
-        os_unfav_btn.bind('<Enter>', lambda e: os_unfav_btn.configure(bg=ACCENT))
-        os_unfav_btn.bind('<Leave>', lambda e: os_unfav_btn.configure(bg=SUBTLE))
-        os_add_playlist_btn = tk.Button(
-            os_toolbar_btns, command=self._add_os_to_playlist,
-            **_icon_btn_kwargs('ADD_TO_PLAYLIST')
-        )
-        os_add_playlist_btn.pack(side='left', padx=(0, BTN_GAP))
-        os_add_playlist_btn.bind('<Enter>', lambda e: os_add_playlist_btn.configure(bg=ACCENT))
-        os_add_playlist_btn.bind('<Leave>', lambda e: os_add_playlist_btn.configure(bg=SUBTLE))
+        load_btn.bind('<Leave>', lambda e: load_btn.configure(bg=CARD))
+        self.os_sort_menu.set('Newest')
+        self.os_sequences: list[tuple[str, str]] = []
         os_search_frame = tk.Frame(os_inner, bg=CARD)
         os_search_frame.pack(fill='x', pady=(0, SMALL_PAD))
         tk.Label(os_search_frame, text='Search:', font=LABEL_FONT, fg=FG, bg=CARD, width=7, anchor='w').grid(
@@ -449,8 +445,46 @@ class App:
         )
         os_search_btn.grid(row=0, column=2, sticky='e')
         os_search_btn.bind('<Enter>', lambda e: os_search_btn.configure(bg=ACCENT))
-        os_search_btn.bind('<Leave>', lambda e: os_search_btn.configure(bg=SUBTLE))
+        os_search_btn.bind('<Leave>', lambda e: os_search_btn.configure(bg=CARD))
         os_search_entry.bind('<Return>', lambda e: self._search_sequences())
+        os_icon_row = tk.Frame(os_inner, bg=CARD)
+        os_icon_row.pack(fill='x', pady=(0, SMALL_PAD))
+        # Pack order: last packed = leftmost. So pack Open first (rightmost), then Download, Add playlist, Unfav, Fav (leftmost).
+        os_open_btn = tk.Button(
+            os_icon_row, command=self._open_selected_sequence,
+            **_icon_btn_kwargs('BROWSER', small=True)
+        )
+        os_open_btn.pack(side='right', padx=(BTN_GAP, 0))
+        os_open_btn.bind('<Enter>', lambda e: os_open_btn.configure(bg=ACCENT))
+        os_open_btn.bind('<Leave>', lambda e: os_open_btn.configure(bg=CARD))
+        os_download_btn = tk.Button(
+            os_icon_row, command=self._download_os_midi,
+            **_icon_btn_kwargs('DOWNLOAD', small=True)
+        )
+        os_download_btn.pack(side='right', padx=(BTN_GAP, 0))
+        os_download_btn.bind('<Enter>', lambda e: os_download_btn.configure(bg=ACCENT))
+        os_download_btn.bind('<Leave>', lambda e: os_download_btn.configure(bg=CARD))
+        os_add_playlist_btn = tk.Button(
+            os_icon_row, command=self._add_os_to_playlist,
+            **_icon_btn_kwargs('ADD_TO_PLAYLIST', small=True)
+        )
+        os_add_playlist_btn.pack(side='right', padx=(BTN_GAP, 0))
+        os_add_playlist_btn.bind('<Enter>', lambda e: os_add_playlist_btn.configure(bg=ACCENT))
+        os_add_playlist_btn.bind('<Leave>', lambda e: os_add_playlist_btn.configure(bg=CARD))
+        os_unfav_btn = tk.Button(
+            os_icon_row, command=self._os_remove_from_favorites,
+            **_icon_btn_kwargs('FAV_OFF', small=True)
+        )
+        os_unfav_btn.pack(side='right', padx=(BTN_GAP, 0))
+        os_unfav_btn.bind('<Enter>', lambda e: os_unfav_btn.configure(bg=ACCENT))
+        os_unfav_btn.bind('<Leave>', lambda e: os_unfav_btn.configure(bg=CARD))
+        os_fav_btn = tk.Button(
+            os_icon_row, command=self._os_add_to_favorites,
+            **_icon_btn_kwargs('FAV', small=True)
+        )
+        os_fav_btn.pack(side='right', padx=(BTN_GAP, 0))
+        os_fav_btn.bind('<Enter>', lambda e: os_fav_btn.configure(bg=ACCENT))
+        os_fav_btn.bind('<Leave>', lambda e: os_fav_btn.configure(bg=CARD))
         os_list_frame = tk.Frame(os_inner, bg=CARD)
         os_list_frame.pack(fill='both', expand=True, pady=(0, SMALL_PAD))
         os_scroll = tk.Scrollbar(os_list_frame, bg=SUBTLE)
@@ -484,6 +518,7 @@ class App:
             self.os_status.config(text=f'★ {len(self._os_favorites.list_all())} favorites. Load list for more.')
         _tooltip(load_btn, self.os_status, 'Load list')
         _tooltip(os_open_btn, self.os_status, 'Open selected in browser')
+        _tooltip(os_download_btn, self.os_status, 'Download MIDI')
         _tooltip(os_fav_btn, self.os_status, 'Add to favorites')
         _tooltip(os_unfav_btn, self.os_status, 'Remove from favorites')
         _tooltip(os_add_playlist_btn, self.os_status, 'Add to playlist')
@@ -551,39 +586,33 @@ class App:
         save_os_cb.grid(row=2, column=0, sticky='w', pady=(SMALL_PAD, 0))
         _tooltip(save_os_cb, self.os_status, 'Save tempo/transpose for this song')
 
-        # OS tab: actions (Download, Play, Stop), progress bar (same style as File tab)
+        # OS tab: actions (Play, Stop), progress bar (same style as File tab)
         self._os_last_midi_path: str | None = None
         os_actions = tk.Frame(os_tab, bg=CARD)
         os_actions.pack(fill='x', padx=PAD, pady=(SMALL_PAD, 2))
-        os_download_btn = tk.Button(
-            os_actions, command=self._download_os_midi,
-            **_icon_btn_kwargs('DOWNLOAD')
-        )
-        os_download_btn.grid(row=0, column=0, padx=(0, BTN_GAP))
-        os_download_btn.bind('<Enter>', lambda e: os_download_btn.configure(bg=ACCENT))
-        os_download_btn.bind('<Leave>', lambda e: os_download_btn.configure(bg=SUBTLE))
         self.os_play_btn = tk.Button(
             os_actions, command=self._load_and_play_sequence,
-            **_icon_btn_kwargs('PLAY', bg=PLAY_GREEN, fg=BG, activebackground=PLAY_GREEN_HOVER, activeforeground=BG)
+            **_icon_btn_kwargs('PLAY', large=True, fg=BG, activeforeground=BG, activebackground=PLAY_GREEN_HOVER)
         )
-        self.os_play_btn.grid(row=0, column=1, padx=(0, BTN_GAP))
+        self.os_play_btn.grid(row=0, column=0, padx=(0, BTN_GAP_TIGHT))
         self.os_play_btn.bind('<Enter>', lambda e: self.os_play_btn.configure(bg=PLAY_GREEN_HOVER))
-        self.os_play_btn.bind('<Leave>', lambda e: self.os_play_btn.configure(bg=PLAY_GREEN))
+        self.os_play_btn.bind('<Leave>', lambda e: self.os_play_btn.configure(bg=CARD))
         self.os_stop_btn = tk.Button(
             os_actions, command=self.stop, state='disabled',
-            **_icon_btn_kwargs('STOP', disabledforeground=FG_DISABLED, activebackground=STOP_RED_HOVER, activeforeground=FG)
+            **_icon_btn_kwargs('STOP', large=True, disabledforeground=FG_DISABLED, activebackground=STOP_RED_HOVER, activeforeground=FG)
         )
-        self.os_stop_btn.grid(row=0, column=2, padx=(0, BTN_GAP))
+        self.os_stop_btn.grid(row=0, column=1, padx=(0, BTN_GAP_TIGHT))
         def _os_stop_enter(e):
             if self.os_stop_btn['state'] == 'normal':
                 self.os_stop_btn.configure(bg=STOP_RED_HOVER)
         def _os_stop_leave(e):
             if self.os_stop_btn['state'] == 'normal':
                 self.os_stop_btn.configure(bg=STOP_RED)
+            else:
+                self.os_stop_btn.configure(bg=CARD)
         self.os_stop_btn.bind('<Enter>', _os_stop_enter)
         self.os_stop_btn.bind('<Leave>', _os_stop_leave)
-        os_actions.columnconfigure(3, weight=1)
-        _tooltip(os_download_btn, self.os_status, 'Download MIDI')
+        os_actions.columnconfigure(2, weight=1)
         _tooltip(self.os_play_btn, self.os_status, 'Play')
         _tooltip(self.os_stop_btn, self.os_status, 'Stop')
         repeat_os_btn = tk.Checkbutton(
@@ -592,7 +621,7 @@ class App:
             activeforeground=FG, activebackground=CARD,
             selectcolor=ENTRY_BG, cursor='hand2'
         )
-        repeat_os_btn.grid(row=0, column=4, sticky='e')
+        repeat_os_btn.grid(row=0, column=3, sticky='e')
         # Progress bar (below actions, like File tab)
         self.os_progress_frame = tk.Frame(os_tab, bg=CARD)
         self.os_progress_frame.pack(fill='x', padx=PAD, pady=(2, 0))
@@ -623,40 +652,22 @@ class App:
         tk.Label(pl_inner, text='Songs play in order.\nAdd from File or Online Sequencer tab.', font=LABEL_FONT, fg=FG, bg=CARD, justify='left').pack(anchor='w')
         pl_toolbar = tk.Frame(pl_inner, bg=CARD)
         pl_toolbar.pack(fill='x', pady=(2, SMALL_PAD))
-        pl_remove_btn = tk.Button(
-            pl_toolbar, command=self._remove_from_playlist,
-            **_icon_btn_kwargs('REMOVE')
-        )
-        pl_remove_btn.grid(row=0, column=0, padx=(0, BTN_GAP))
-        pl_remove_btn.bind('<Enter>', lambda e: pl_remove_btn.configure(bg=ACCENT))
-        pl_remove_btn.bind('<Leave>', lambda e: pl_remove_btn.configure(bg=SUBTLE))
+        # Toolbar: only Remove and Clear (right-aligned). Play/Stop go in pl_actions below.
+        # Pack order: last packed = leftmost. Pack Clear first (rightmost), then Remove.
         pl_clear_btn = tk.Button(
             pl_toolbar, command=self._clear_playlist,
-            **_icon_btn_kwargs('CLEAR')
+            **_icon_btn_kwargs('CLEAR', small=True)
         )
-        pl_clear_btn.grid(row=0, column=1, padx=(0, BTN_GAP))
+        pl_clear_btn.pack(side='right', padx=(BTN_GAP, 0))
         pl_clear_btn.bind('<Enter>', lambda e: pl_clear_btn.configure(bg=ACCENT))
-        pl_clear_btn.bind('<Leave>', lambda e: pl_clear_btn.configure(bg=SUBTLE))
-        self.pl_play_btn = tk.Button(
-            pl_toolbar, command=self._play_playlist,
-            **_icon_btn_kwargs('PLAY', bg=PLAY_GREEN, fg=BG, activebackground=PLAY_GREEN_HOVER, activeforeground=BG)
+        pl_clear_btn.bind('<Leave>', lambda e: pl_clear_btn.configure(bg=CARD))
+        pl_remove_btn = tk.Button(
+            pl_toolbar, command=self._remove_from_playlist,
+            **_icon_btn_kwargs('REMOVE', small=True)
         )
-        self.pl_play_btn.grid(row=0, column=2, padx=(0, BTN_GAP))
-        self.pl_play_btn.bind('<Enter>', lambda e: self.pl_play_btn.configure(bg=PLAY_GREEN_HOVER))
-        self.pl_play_btn.bind('<Leave>', lambda e: self.pl_play_btn.configure(bg=PLAY_GREEN))
-        self.pl_stop_btn = tk.Button(
-            pl_toolbar, command=self.stop, state='disabled',
-            **_icon_btn_kwargs('STOP', disabledforeground=FG_DISABLED, activebackground=STOP_RED_HOVER, activeforeground=FG)
-        )
-        self.pl_stop_btn.grid(row=0, column=3, padx=(0, BTN_GAP))
-        def _pl_stop_enter(e):
-            if self.pl_stop_btn['state'] == 'normal':
-                self.pl_stop_btn.configure(bg=STOP_RED_HOVER)
-        def _pl_stop_leave(e):
-            if self.pl_stop_btn['state'] == 'normal':
-                self.pl_stop_btn.configure(bg=STOP_RED)
-        self.pl_stop_btn.bind('<Enter>', _pl_stop_enter)
-        self.pl_stop_btn.bind('<Leave>', _pl_stop_leave)
+        pl_remove_btn.pack(side='right', padx=(BTN_GAP, 0))
+        pl_remove_btn.bind('<Enter>', lambda e: pl_remove_btn.configure(bg=ACCENT))
+        pl_remove_btn.bind('<Leave>', lambda e: pl_remove_btn.configure(bg=CARD))
         pl_list_frame = tk.Frame(pl_inner, bg=CARD)
         pl_list_frame.pack(fill='both', expand=True, pady=(0, SMALL_PAD))
         pl_scroll = tk.Scrollbar(pl_list_frame, bg=SUBTLE)
@@ -669,6 +680,39 @@ class App:
         )
         self.playlist_listbox.pack(side='left', fill='both', expand=True)
         pl_scroll.config(command=self.playlist_listbox.yview)
+        # Play/Stop row at bottom of tab (like File and OS tabs)
+        pl_actions = tk.Frame(playlist_tab, bg=CARD)
+        pl_actions.pack(fill='x', padx=PAD, pady=(SMALL_PAD, 2))
+        pl_actions.columnconfigure(2, weight=1)
+        self.pl_play_btn = tk.Button(
+            pl_actions, command=self._play_playlist,
+            **_icon_btn_kwargs('PLAY', large=True, fg=BG, activeforeground=BG, activebackground=PLAY_GREEN_HOVER)
+        )
+        self.pl_play_btn.grid(row=0, column=0, padx=(0, BTN_GAP_TIGHT))
+        self.pl_play_btn.bind('<Enter>', lambda e: self.pl_play_btn.configure(bg=PLAY_GREEN_HOVER))
+        self.pl_play_btn.bind('<Leave>', lambda e: self.pl_play_btn.configure(bg=CARD))
+        self.pl_stop_btn = tk.Button(
+            pl_actions, command=self.stop, state='disabled',
+            **_icon_btn_kwargs('STOP', large=True, disabledforeground=FG_DISABLED, activebackground=STOP_RED_HOVER, activeforeground=FG)
+        )
+        self.pl_stop_btn.grid(row=0, column=1, padx=(0, BTN_GAP_TIGHT))
+        def _pl_stop_enter(e):
+            if self.pl_stop_btn['state'] == 'normal':
+                self.pl_stop_btn.configure(bg=STOP_RED_HOVER)
+        def _pl_stop_leave(e):
+            if self.pl_stop_btn['state'] == 'normal':
+                self.pl_stop_btn.configure(bg=STOP_RED)
+            else:
+                self.pl_stop_btn.configure(bg=CARD)
+        self.pl_stop_btn.bind('<Enter>', _pl_stop_enter)
+        self.pl_stop_btn.bind('<Leave>', _pl_stop_leave)
+        repeat_pl_btn = tk.Checkbutton(
+            pl_actions, text='Repeat', variable=self.repeat_playlist,
+            font=LABEL_FONT, fg=FG, bg=CARD,
+            activeforeground=FG, activebackground=CARD,
+            selectcolor=ENTRY_BG, cursor='hand2'
+        )
+        repeat_pl_btn.grid(row=0, column=3, sticky='e')
         # Progress bar (same as File / OS tabs)
         self.pl_progress_frame = tk.Frame(playlist_tab, bg=CARD)
         self.pl_progress_frame.pack(fill='x', padx=PAD, pady=(2, 0))
@@ -690,6 +734,7 @@ class App:
         _tooltip(pl_clear_btn, self.pl_status, 'Clear playlist')
         _tooltip(self.pl_play_btn, self.pl_status, 'Play playlist')
         _tooltip(self.pl_stop_btn, self.pl_status, 'Stop')
+        _tooltip(repeat_pl_btn, self.pl_status, 'When finished, play playlist again from the beginning')
 
         # ---- Tab 4: Play together ----
         sync_tab = tk.Frame(notebook, bg=CARD)
@@ -705,76 +750,82 @@ class App:
             sync_inner,
             text='Host or join a room — when the host\npresses Play, everyone starts together.',
             font=LABEL_FONT, fg=FG, bg=CARD, justify='left'
-        ).grid(row=0, column=0, columnspan=5, sticky='w', pady=(0, SMALL_PAD))
+        ).pack(anchor='w', pady=(0, SMALL_PAD))
         # Host
         host_frame = tk.Frame(sync_inner, bg=CARD)
-        host_frame.grid(row=1, column=0, columnspan=5, sticky='ew', pady=(PAD, 2))
-        sync_inner.columnconfigure(1, weight=1)
-        tk.Label(host_frame, text='Host', font=LABEL_FONT, fg=FG, bg=CARD, width=6, anchor='w').grid(row=0, column=0, padx=(0, BTN_GAP), sticky='w')
+        host_frame.pack(fill='x', pady=(PAD, 2))
+        host_line1 = tk.Frame(host_frame, bg=CARD)
+        host_line1.pack(fill='x')
+        tk.Label(host_line1, text='Host', font=LABEL_FONT, fg=FG, bg=CARD, width=6, anchor='w').pack(side='left', padx=(0, BTN_GAP))
         self.sync_port_var = tk.StringVar(value=str(DEFAULT_PORT))
         sync_port_entry = tk.Entry(
-            host_frame, textvariable=self.sync_port_var, width=6,
+            host_line1, textvariable=self.sync_port_var, width=16,
             font=LABEL_FONT, bg=ENTRY_BG, fg=ENTRY_FG, relief='flat', highlightthickness=0
         )
-        sync_port_entry.grid(row=0, column=1, padx=(0, BTN_GAP), sticky='w')
+        sync_port_entry.pack(side='left', padx=(0, BTN_GAP))
+        host_btns = tk.Frame(host_frame, bg=CARD)
+        host_btns.pack(fill='x', pady=(SMALL_PAD, 0))
         self.sync_host_btn = tk.Button(
-            host_frame, command=self._sync_start_host,
+            host_btns, command=self._sync_start_host,
             **_icon_btn_kwargs('HOST')
         )
-        self.sync_host_btn.grid(row=0, column=2, padx=(0, BTN_GAP))
+        self.sync_host_btn.pack(side='left', padx=(0, BTN_GAP))
         self.sync_host_btn.bind('<Enter>', lambda e: self.sync_host_btn.configure(bg=ACCENT))
-        self.sync_host_btn.bind('<Leave>', lambda e: self.sync_host_btn.configure(bg=SUBTLE))
+        self.sync_host_btn.bind('<Leave>', lambda e: self.sync_host_btn.configure(bg=CARD))
         self.sync_stop_host_btn = tk.Button(
-            host_frame, command=self._sync_stop_host, state='disabled',
+            host_btns, command=self._sync_stop_host, state='disabled',
             **_icon_btn_kwargs('STOP')
         )
-        self.sync_stop_host_btn.grid(row=0, column=3, padx=(0, BTN_GAP))
+        self.sync_stop_host_btn.pack(side='left', padx=(0, BTN_GAP))
         self.sync_stop_host_btn.bind('<Enter>', lambda e: self.sync_stop_host_btn.configure(bg=ACCENT))
-        self.sync_stop_host_btn.bind('<Leave>', lambda e: self.sync_stop_host_btn.configure(bg=SUBTLE))
+        self.sync_stop_host_btn.bind('<Leave>', lambda e: self.sync_stop_host_btn.configure(bg=CARD))
         self.sync_host_status = tk.Label(
-            host_frame, text='', font=SMALL_FONT, fg=SUBTLE, bg=CARD
+            host_btns, text='', font=SMALL_FONT, fg=SUBTLE, bg=CARD
         )
-        self.sync_host_status.grid(row=0, column=4, padx=(PAD, 0), sticky='w')
+        self.sync_host_status.pack(side='left', padx=(PAD, 0))
         self.sync_firewall_hint = tk.Label(
             sync_inner,
             text='If others can\'t connect: allow this app\nin Windows Firewall (Private).',
             font=HINT_FONT, fg=SUBTLE, bg=CARD, justify='left'
         )
-        self.sync_firewall_hint.grid(row=2, column=0, columnspan=5, sticky='w', pady=(0, SMALL_PAD))
+        self.sync_firewall_hint.pack(anchor='w', pady=(0, SMALL_PAD))
         # Join
         join_frame = tk.Frame(sync_inner, bg=CARD)
-        join_frame.grid(row=3, column=0, columnspan=5, sticky='ew', pady=(2, PAD))
-        tk.Label(join_frame, text='Join', font=LABEL_FONT, fg=FG, bg=CARD, width=6, anchor='w').grid(row=0, column=0, padx=(0, BTN_GAP), sticky='w')
+        join_frame.pack(fill='x', pady=(2, PAD))
+        join_line1 = tk.Frame(join_frame, bg=CARD)
+        join_line1.pack(fill='x')
+        tk.Label(join_line1, text='Join', font=LABEL_FONT, fg=FG, bg=CARD, width=6, anchor='w').pack(side='left', padx=(0, BTN_GAP))
         self.sync_join_var = tk.StringVar(value='')
         sync_join_entry = tk.Entry(
-            join_frame, textvariable=self.sync_join_var, width=16,
+            join_line1, textvariable=self.sync_join_var, width=16,
             font=LABEL_FONT, bg=ENTRY_BG, fg=ENTRY_FG, relief='flat', highlightthickness=0
         )
-        sync_join_entry.grid(row=0, column=1, padx=(0, BTN_GAP), sticky='ew')
-        join_frame.columnconfigure(1, weight=1)
+        sync_join_entry.pack(side='left', fill='x', expand=True, padx=(0, BTN_GAP))
+        join_btns = tk.Frame(join_frame, bg=CARD)
+        join_btns.pack(fill='x', pady=(SMALL_PAD, 0))
         self.sync_join_btn = tk.Button(
-            join_frame, command=self._sync_join,
+            join_btns, command=self._sync_join,
             **_icon_btn_kwargs('CONNECT')
         )
-        self.sync_join_btn.grid(row=0, column=2, padx=(0, BTN_GAP))
+        self.sync_join_btn.pack(side='left', padx=(0, BTN_GAP))
         self.sync_join_btn.bind('<Enter>', lambda e: self.sync_join_btn.configure(bg=ACCENT))
-        self.sync_join_btn.bind('<Leave>', lambda e: self.sync_join_btn.configure(bg=SUBTLE))
+        self.sync_join_btn.bind('<Leave>', lambda e: self.sync_join_btn.configure(bg=CARD))
         self.sync_disconnect_btn = tk.Button(
-            join_frame, command=self._sync_disconnect, state='disabled',
+            join_btns, command=self._sync_disconnect, state='disabled',
             **_icon_btn_kwargs('DISCONNECT')
         )
-        self.sync_disconnect_btn.grid(row=0, column=3, padx=(0, BTN_GAP))
+        self.sync_disconnect_btn.pack(side='left', padx=(0, BTN_GAP))
         self.sync_disconnect_btn.bind('<Enter>', lambda e: self.sync_disconnect_btn.configure(bg=ACCENT))
-        self.sync_disconnect_btn.bind('<Leave>', lambda e: self.sync_disconnect_btn.configure(bg=SUBTLE))
+        self.sync_disconnect_btn.bind('<Leave>', lambda e: self.sync_disconnect_btn.configure(bg=CARD))
         tk.Label(
             sync_inner, text='e.g. 192.168.0.1:38472',
             font=HINT_FONT, fg=SUBTLE, bg=CARD
-        ).grid(row=4, column=1, columnspan=4, sticky='w', pady=(0, 2))
+        ).pack(anchor='w', pady=(0, 2))
         self.sync_status = tk.Label(
             sync_inner, text='Not connected.',
             font=SMALL_FONT, fg=SUBTLE, bg=CARD
         )
-        self.sync_status.grid(row=5, column=0, columnspan=5, sticky='w', pady=(0, PAD))
+        self.sync_status.pack(anchor='w', pady=(0, PAD))
         _tooltip(self.sync_host_btn, self.sync_status, 'Start hosting')
         _tooltip(self.sync_stop_host_btn, self.sync_status, 'Stop hosting')
         _tooltip(self.sync_join_btn, self.sync_status, 'Connect')
@@ -806,18 +857,22 @@ class App:
             self.status.config(text='Checking for updates…')
 
         def do_check():
-            result = check_for_updates()
+            try:
+                result = check_for_updates()
+            except Exception as e:
+                result = (None, None, None, None, str(e))
             self.root.after(0, lambda: self._on_update_check_done(result))
 
         threading.Thread(target=do_check, daemon=True).start()
 
     def _on_update_check_done(self, result):
-        latest_version, html_url, body, download_url = result
+        latest_version, html_url, body, download_url, error_detail = result
         self._update_btn.config(state='normal')
         if hasattr(self, 'status'):
             self.status.config(text='Ready — focus the game window before playing')
         if latest_version is None:
-            messagebox.showerror('Update check failed', 'Could not check for updates. Check your connection.')
+            msg = error_detail or 'Could not check for updates. Check your connection.'
+            messagebox.showerror('Update check failed', msg)
             return
         if not is_newer(latest_version):
             messagebox.showinfo('Up to date', f'You have the latest version (v{APP_VERSION}).')
@@ -1582,9 +1637,9 @@ class App:
             if hasattr(self, 'pl_play_btn'):
                 self.pl_play_btn.config(state='normal')
             if hasattr(self, 'pl_stop_btn'):
-                self.pl_stop_btn.config(state='disabled', bg=SUBTLE)
-            self.stop_btn.config(state='disabled', bg=SUBTLE)
-            self.os_stop_btn.config(state='disabled', bg=SUBTLE)
+                self.pl_stop_btn.config(state='disabled', bg=CARD)
+            self.stop_btn.config(state='disabled', bg=CARD)
+            self.os_stop_btn.config(state='disabled', bg=CARD)
             self.os_status.config(text='Finished playing.')
             if self._current_source == 'playlist' and hasattr(self, 'pl_status'):
                 self.pl_status.config(text='Finished playing.')
@@ -1604,9 +1659,9 @@ class App:
         if hasattr(self, 'pl_play_btn'):
             self.pl_play_btn.config(state='normal')
         if hasattr(self, 'pl_stop_btn'):
-            self.pl_stop_btn.config(state='disabled', bg=SUBTLE)
-        self.stop_btn.config(state='disabled', bg=SUBTLE)
-        self.os_stop_btn.config(state='disabled', bg=SUBTLE)
+            self.pl_stop_btn.config(state='disabled', bg=CARD)
+        self.stop_btn.config(state='disabled', bg=CARD)
+        self.os_stop_btn.config(state='disabled', bg=CARD)
 
     def _play_thread(self, path, tempo_multiplier, transpose):
         def on_done(finished_naturally: bool):
@@ -1630,6 +1685,10 @@ class App:
         if finished_naturally and not self._stopped_by_user:
             if self._current_source == 'playlist':
                 if self._playlist.advance():
+                    self.root.after(0, self._start_next_playlist_item)
+                    return
+                if self.repeat_playlist.get():
+                    self._playlist.reset_to_start()
                     self.root.after(0, self._start_next_playlist_item)
                     return
             else:

@@ -9,7 +9,9 @@ if TYPE_CHECKING:
     from tkinter import PhotoImage
 
 # Size in pixels for icon buttons (single dimension; we render square)
-ICON_SIZE = 22
+ICON_SIZE = 30
+ICON_SIZE_SMALL = 20
+ICON_SIZE_LARGE = 38
 
 # Windows Segoe UI Emoji (color emoji font)
 def _emoji_font_path() -> str | None:
@@ -70,6 +72,7 @@ def get_all_theme_icons(size: int = ICON_SIZE) -> dict[str, "PhotoImage"]:
         ICON_SAVE,
         ICON_SEARCH,
         ICON_STOP,
+        ICON_UPDATE,
     )
     names_and_chars = [
         ("PLAY", ICON_PLAY),
@@ -89,6 +92,7 @@ def get_all_theme_icons(size: int = ICON_SIZE) -> dict[str, "PhotoImage"]:
         ("DISCONNECT", ICON_DISCONNECT),
         ("DOWNLOAD", ICON_DOWNLOAD),
         ("SAVE", ICON_SAVE),
+        ("UPDATE", ICON_UPDATE),
     ]
     result: dict[str, "PhotoImage"] = {}
     for name, char in names_and_chars:

@@ -29,7 +29,9 @@ PAD = 8
 SMALL_PAD = 4
 BTN_PAD = (4, 0)
 BTN_GAP = 4  # gap between icon buttons
-ICON_BTN_WIDTH = 2  # width in chars for icon-only buttons (uniform size)
+BTN_GAP_TIGHT = 0  # gap between bottom control buttons (Play, Stop, etc.)
+BTN_PAD_LARGE = (1, 0)  # less padding for large control buttons so they sit closer
+ICON_BTN_WIDTH = 3  # width in chars for icon-only buttons (uniform size)
 
 # Layout (taller, thinner window: more listbox rows, narrower wrap)
 LISTBOX_MIN_ROWS = 8
@@ -37,21 +39,22 @@ OS_LISTBOX_MIN_ROWS = 8
 HINT_WRAP = 280
 
 # Button icons — use emoji so they render in color with ICON_FONT (Segoe UI Emoji)
-ICON_FONT = ('Segoe UI Emoji', 10)
+ICON_FONT = ('Segoe UI Emoji', 14)
 ICON_PLAY = '▶️'
 ICON_STOP = '⏹️'
 ICON_FOLDER = '📁'
 ICON_ADD_LIST = '📋'
-ICON_ADD_TO_PLAYLIST = '➕'
-ICON_FAV = '⭐'
-ICON_FAV_OFF = '☆'
+ICON_ADD_TO_PLAYLIST = '📝'
+ICON_FAV = '➕'
+ICON_FAV_OFF = '➖'
 ICON_SEARCH = '🔍'
 ICON_RELOAD = '🔄'
-ICON_BROWSER = '🌐'
+ICON_BROWSER = '🌎'
 ICON_REMOVE = '➖'
-ICON_CLEAR = '🗑️'
-ICON_HOST = '🏠'
-ICON_CONNECT = '🔗'
+ICON_CLEAR = '❌'
+ICON_HOST = '🛜'
+ICON_CONNECT = '↔️'
 ICON_DISCONNECT = '❌'
-ICON_DOWNLOAD = '📥'
+ICON_DOWNLOAD = '💾'
 ICON_SAVE = '💾'
+ICON_UPDATE = '🔄'
