@@ -35,9 +35,9 @@ BTN_GAP_TIGHT = 0  # gap between bottom control buttons (Play, Stop, etc.)
 BTN_PAD_LARGE = (1, 0)  # less padding for large control buttons so they sit closer
 ICON_BTN_WIDTH = 3  # width in chars for icon-only buttons (uniform size)
 
-# Layout (taller, thinner window: more listbox rows, narrower wrap)
-LISTBOX_MIN_ROWS = 8
-OS_LISTBOX_MIN_ROWS = 8
+# Layout (compact enough that control row stays visible on lower-res / small screens)
+LISTBOX_MIN_ROWS = 5
+OS_LISTBOX_MIN_ROWS = 5
 HINT_WRAP = 280
 
 # Button icons — use emoji so they render in color with ICON_FONT (Segoe UI Emoji)
