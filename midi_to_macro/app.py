@@ -99,6 +99,9 @@ class App:
         self.repeat_os = tk.BooleanVar(value=False)
         self._current_source: str | None = None
         self._stopped_by_user: bool = False
+        # Playlist: list of ('file', path) or ('os', sid, title)
+        self._playlist: list[tuple[str, ...]] = []
+        self._playlist_index: int = 0
 
         # Per-song tempo/transpose (persisted to JSON)
         self._song_settings: dict[str, dict[str, float | int]] = {}
@@ -158,6 +161,15 @@ class App:
         open_folder_btn.bind('<Leave>', lambda e: open_folder_btn.configure(bg=SUBTLE))
         tk.Label(file_inner, text='MIDI file', font=LABEL_FONT, fg=FG, bg=CARD).grid(
             row=2, column=0, sticky='w', pady=(PAD, SMALL_PAD))
+        add_to_playlist_file_btn = tk.Button(
+            file_inner, text='Add to playlist', command=self._add_file_to_playlist,
+            font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
+            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
+            cursor='hand2'
+        )
+        add_to_playlist_file_btn.grid(row=2, column=1, padx=(PAD, 0))
+        add_to_playlist_file_btn.bind('<Enter>', lambda e: add_to_playlist_file_btn.configure(bg=ACCENT))
+        add_to_playlist_file_btn.bind('<Leave>', lambda e: add_to_playlist_file_btn.configure(bg=SUBTLE))
         list_frame = tk.Frame(file_inner, bg=CARD)
         list_frame.grid(row=3, column=0, columnspan=2, sticky='nsew', pady=(0, SMALL_PAD))
         file_inner.rowconfigure(3, weight=1)
@@ -166,7 +178,8 @@ class App:
         self.file_listbox = tk.Listbox(
             list_frame, height=LISTBOX_MIN_ROWS, font=LABEL_FONT,
             bg=ENTRY_BG, fg=ENTRY_FG, selectbackground=ACCENT, selectforeground=BG,
-            relief='flat', highlightthickness=0, yscrollcommand=scrollbar.set
+            relief='flat', highlightthickness=0, yscrollcommand=scrollbar.set,
+            selectmode=tk.EXTENDED
         )
         self.file_listbox.pack(side='left', fill='both', expand=True)
         scrollbar.config(command=self.file_listbox.yview)
@@ -354,6 +367,15 @@ class App:
         os_unfav_btn.pack(side='left', padx=(4, 0))
         os_unfav_btn.bind('<Enter>', lambda e: os_unfav_btn.configure(bg=ACCENT))
         os_unfav_btn.bind('<Leave>', lambda e: os_unfav_btn.configure(bg=SUBTLE))
+        os_add_playlist_btn = tk.Button(
+            os_toolbar, text='Add to playlist', command=self._add_os_to_playlist,
+            font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
+            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
+            cursor='hand2'
+        )
+        os_add_playlist_btn.pack(side='left', padx=(8, 0))
+        os_add_playlist_btn.bind('<Enter>', lambda e: os_add_playlist_btn.configure(bg=ACCENT))
+        os_add_playlist_btn.bind('<Leave>', lambda e: os_add_playlist_btn.configure(bg=SUBTLE))
         os_search_frame = tk.Frame(os_inner, bg=CARD)
         os_search_frame.pack(fill='x', pady=(0, SMALL_PAD))
         tk.Label(os_search_frame, text='Search:', font=LABEL_FONT, fg=FG, bg=CARD).pack(
@@ -385,7 +407,8 @@ class App:
         self.os_listbox = tk.Listbox(
             os_list_frame, font=LABEL_FONT, height=OS_LISTBOX_MIN_ROWS,
             bg=ENTRY_BG, fg=ENTRY_FG, selectbackground=ACCENT, selectforeground=BG,
-            relief='flat', highlightthickness=0, yscrollcommand=os_scroll.set
+            relief='flat', highlightthickness=0, yscrollcommand=os_scroll.set,
+            selectmode=tk.EXTENDED
         )
         self.os_listbox.pack(side='left', fill='both', expand=True)
         self.os_listbox.bind('<Double-Button-1>', lambda e: self._open_selected_sequence())
@@ -524,6 +547,91 @@ class App:
             text='Ready — focus the game window before playing',
             font=SMALL_FONT, fg=SUBTLE, bg=CARD
         ).pack(anchor='w')
+
+        # ---- Tab 3: Playlist ----
+        playlist_tab = tk.Frame(notebook, bg=CARD)
+        notebook.add(playlist_tab, text='  Playlist  ')
+        pl_frame = tk.LabelFrame(
+            playlist_tab, text='  Playlist  ', font=LABEL_FONT,
+            fg=SUBTLE, bg=CARD, labelanchor='n'
+        )
+        pl_frame.pack(fill='both', expand=True, padx=PAD, pady=(0, PAD))
+        pl_inner = tk.Frame(pl_frame, bg=CARD)
+        pl_inner.pack(fill='both', expand=True, padx=PAD, pady=(SMALL_PAD, PAD))
+        tk.Label(pl_inner, text='Songs play in order. Add from File or Online Sequencer tab.', font=LABEL_FONT, fg=FG, bg=CARD).pack(anchor='w')
+        pl_toolbar = tk.Frame(pl_inner, bg=CARD)
+        pl_toolbar.pack(fill='x', pady=(SMALL_PAD, PAD))
+        pl_remove_btn = tk.Button(
+            pl_toolbar, text='Remove selected', command=self._remove_from_playlist,
+            font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
+            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
+            cursor='hand2'
+        )
+        pl_remove_btn.pack(side='left', padx=(0, 8))
+        pl_remove_btn.bind('<Enter>', lambda e: pl_remove_btn.configure(bg=ACCENT))
+        pl_remove_btn.bind('<Leave>', lambda e: pl_remove_btn.configure(bg=SUBTLE))
+        pl_clear_btn = tk.Button(
+            pl_toolbar, text='Clear playlist', command=self._clear_playlist,
+            font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
+            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
+            cursor='hand2'
+        )
+        pl_clear_btn.pack(side='left', padx=(0, 8))
+        pl_clear_btn.bind('<Enter>', lambda e: pl_clear_btn.configure(bg=ACCENT))
+        pl_clear_btn.bind('<Leave>', lambda e: pl_clear_btn.configure(bg=SUBTLE))
+        self.pl_play_btn = tk.Button(
+            pl_toolbar, text='▶ Play playlist', command=self._play_playlist,
+            font=LABEL_FONT, bg=PLAY_GREEN, fg=BG, activebackground=PLAY_GREEN_HOVER,
+            activeforeground=BG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1],
+            cursor='hand2'
+        )
+        self.pl_play_btn.pack(side='left', padx=(0, 8))
+        self.pl_play_btn.bind('<Enter>', lambda e: self.pl_play_btn.configure(bg=PLAY_GREEN_HOVER))
+        self.pl_play_btn.bind('<Leave>', lambda e: self.pl_play_btn.configure(bg=PLAY_GREEN))
+        self.pl_stop_btn = tk.Button(
+            pl_toolbar, text='Stop', command=self.stop, state='disabled',
+            font=LABEL_FONT, bg=SUBTLE, fg=FG, disabledforeground=FG_DISABLED,
+            activebackground=STOP_RED_HOVER, activeforeground=FG,
+            relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1], cursor='hand2'
+        )
+        self.pl_stop_btn.pack(side='left', padx=(0, 8))
+        def _pl_stop_enter(e):
+            if self.pl_stop_btn['state'] == 'normal':
+                self.pl_stop_btn.configure(bg=STOP_RED_HOVER)
+        def _pl_stop_leave(e):
+            if self.pl_stop_btn['state'] == 'normal':
+                self.pl_stop_btn.configure(bg=STOP_RED)
+        self.pl_stop_btn.bind('<Enter>', _pl_stop_enter)
+        self.pl_stop_btn.bind('<Leave>', _pl_stop_leave)
+        pl_list_frame = tk.Frame(pl_inner, bg=CARD)
+        pl_list_frame.pack(fill='both', expand=True, pady=(0, PAD))
+        pl_scroll = tk.Scrollbar(pl_list_frame, bg=SUBTLE)
+        pl_scroll.pack(side='right', fill='y')
+        self.playlist_listbox = tk.Listbox(
+            pl_list_frame, font=LABEL_FONT, height=OS_LISTBOX_MIN_ROWS,
+            bg=ENTRY_BG, fg=ENTRY_FG, selectbackground=ACCENT, selectforeground=BG,
+            relief='flat', highlightthickness=0, yscrollcommand=pl_scroll.set,
+            selectmode=tk.EXTENDED
+        )
+        self.playlist_listbox.pack(side='left', fill='both', expand=True)
+        pl_scroll.config(command=self.playlist_listbox.yview)
+        # Progress bar (same as File / OS tabs)
+        self.pl_progress_frame = tk.Frame(playlist_tab, bg=CARD)
+        self.pl_progress_frame.pack(fill='x', padx=PAD, pady=(SMALL_PAD, 0))
+        self.pl_progress_bar = ttk.Progressbar(
+            self.pl_progress_frame, style='Playback.Horizontal.TProgressbar',
+            mode='determinate', maximum=100, value=0
+        )
+        self.pl_progress_bar.pack(fill='x')
+        # Status (same style as other tabs)
+        pl_status_frame = tk.Frame(playlist_tab, bg=CARD)
+        pl_status_frame.pack(fill='x', padx=PAD, pady=(SMALL_PAD, PAD))
+        self.pl_status = tk.Label(
+            pl_status_frame,
+            text='Ready — focus the game window before playing',
+            font=SMALL_FONT, fg=SUBTLE, bg=CARD
+        )
+        self.pl_status.pack(anchor='w')
 
     def _load_sequences(self):
         label = (self.os_sort_menu.get() or 'Newest').strip()
@@ -676,17 +784,22 @@ class App:
 
         threading.Thread(target=do_load_and_play, daemon=True).start()
 
-    def _os_start_playback(self, path: str, tempo_multiplier: float, transpose: int):
-        """Start playback for an OS-downloaded MIDI path (called on main thread)."""
+    def _os_start_playback(self, path: str, tempo_multiplier: float, transpose: int, keep_source: bool = False):
+        """Start playback for an OS-downloaded MIDI path (called on main thread). If keep_source True, do not set _current_source (playlist)."""
         self._os_last_midi_path = path
         self.os_status.config(text='Playing… (focus game window)')
         self.root.focus_set()
         focus_process_window('wwm.exe')
-        self._current_source = 'os'
+        if not keep_source:
+            self._current_source = 'os'
         self._stopped_by_user = False
         self.playing = True
         self.play_btn.config(state='disabled')
         self.os_play_btn.config(state='disabled')
+        if hasattr(self, 'pl_play_btn'):
+            self.pl_play_btn.config(state='disabled')
+        if hasattr(self, 'pl_stop_btn'):
+            self.pl_stop_btn.config(state='normal', bg=STOP_RED)
         self.stop_btn.config(state='normal', bg=STOP_RED)
         self.os_stop_btn.config(state='normal', bg=STOP_RED)
         self.status.config(text='Playing… (focus game window)')
@@ -796,6 +909,151 @@ class App:
             return None
         name = self.file_listbox.get(sel[0])
         return os.path.join(self.folder_path, name)
+
+    def _playlist_display_line(self, item: tuple[str, ...]) -> str:
+        if item[0] == 'file':
+            return os.path.basename(item[1])
+        # 'os', sid, title
+        title = item[2][:50] + '…' if len(item[2]) > 50 else item[2]
+        return f"{title}  (ID: {item[1]})"
+
+    def _refresh_playlist_listbox(self):
+        self.playlist_listbox.delete(0, tk.END)
+        for item in self._playlist:
+            self.playlist_listbox.insert(tk.END, self._playlist_display_line(item))
+        n = len(self._playlist)
+        if not self.playing:
+            self.pl_status.config(
+                text=f'{n} song{"s" if n != 1 else ""} in playlist.' if n else 'Playlist is empty.'
+            )
+
+    def _pl_select_playing(self):
+        """Select and scroll to the currently playing item in the playlist listbox."""
+        if self._current_source != 'playlist' or self._playlist_index >= len(self._playlist):
+            return
+        self.playlist_listbox.selection_clear(0, tk.END)
+        self.playlist_listbox.selection_set(self._playlist_index)
+        self.playlist_listbox.see(self._playlist_index)
+        self.playlist_listbox.activate(self._playlist_index)
+
+    def _add_file_to_playlist(self):
+        if not self.folder_path:
+            messagebox.showwarning('No folder', 'Open a folder first.')
+            return
+        sel = list(self.file_listbox.curselection())
+        if not sel:
+            messagebox.showwarning('No selection', 'Select one or more MIDI files to add.')
+            return
+        for idx in sel:
+            name = self.file_listbox.get(idx)
+            path = os.path.join(self.folder_path, name)
+            self._playlist.append(('file', path))
+        self._refresh_playlist_listbox()
+
+    def _add_os_to_playlist(self):
+        sel = list(self.os_listbox.curselection())
+        if not sel or not self.os_sequences:
+            messagebox.showwarning('No selection', 'Load list and select one or more sequences to add.')
+            return
+        for idx in sel:
+            if idx < len(self.os_sequences):
+                sid, title = self.os_sequences[idx]
+                self._playlist.append(('os', sid, title))
+        self._refresh_playlist_listbox()
+
+    def _remove_from_playlist(self):
+        sel = list(self.playlist_listbox.curselection())
+        if not sel:
+            return
+        # Remove in reverse order so indices stay valid
+        for idx in sorted(sel, reverse=True):
+            if 0 <= idx < len(self._playlist):
+                self._playlist.pop(idx)
+        self._refresh_playlist_listbox()
+
+    def _clear_playlist(self):
+        self._playlist.clear()
+        self._refresh_playlist_listbox()
+
+    def _play_playlist(self):
+        if not playback.KEYBOARD_AVAILABLE:
+            messagebox.showerror(
+                'Missing dependency',
+                'pynput library not available. Install with: pip install pynput'
+            )
+            return
+        if not self._playlist:
+            messagebox.showwarning('Empty playlist', 'Add songs from the File or Online Sequencer tab first.')
+            return
+        self.root.focus_set()
+        focus_process_window('wwm.exe')
+        self._current_source = 'playlist'
+        self._playlist_index = 0
+        self._stopped_by_user = False
+        self.playing = True
+        self.play_btn.config(state='disabled')
+        self.os_play_btn.config(state='disabled')
+        self.pl_play_btn.config(state='disabled')
+        self.stop_btn.config(state='normal', bg=STOP_RED)
+        self.os_stop_btn.config(state='normal', bg=STOP_RED)
+        self.pl_stop_btn.config(state='normal', bg=STOP_RED)
+        n = len(self._playlist)
+        self.status.config(text=f'Playing 1/{n}… (focus game window)')
+        self.os_status.config(text=f'Playing 1/{n}… (focus game window)')
+        self.pl_status.config(text=f'Playing 1/{n}… (focus game window)')
+        self._pl_select_playing()
+        self._start_next_playlist_item()
+
+    def _start_file_playback(self, path: str, keep_source: bool = False):
+        """Start playback of a file MIDI. If keep_source is True, do not set _current_source (used by playlist)."""
+        if not keep_source:
+            self._current_source = 'file'
+        self._stopped_by_user = False
+        self.playing = True
+        self.play_btn.config(state='disabled')
+        self.os_play_btn.config(state='disabled')
+        if hasattr(self, 'pl_play_btn'):
+            self.pl_play_btn.config(state='disabled')
+        if hasattr(self, 'pl_stop_btn'):
+            self.pl_stop_btn.config(state='normal', bg=STOP_RED)
+        self.stop_btn.config(state='normal', bg=STOP_RED)
+        self.os_stop_btn.config(state='normal', bg=STOP_RED)
+        self.status.config(text='Playing... (focus game window)')
+        threading.Thread(
+            target=self._play_thread,
+            args=(path, self.tempo.get(), self.transpose.get()),
+            daemon=True
+        ).start()
+
+    def _start_next_playlist_item(self):
+        """Start playback of the current playlist item (main thread). Advances to next when finished via _on_playback_finished."""
+        if self._playlist_index >= len(self._playlist):
+            self.root.after(0, self._progress_done)
+            return
+        item = self._playlist[self._playlist_index]
+        n = len(self._playlist)
+        self.status.config(text=f'Playing {self._playlist_index + 1}/{n}… (focus game window)')
+        self.os_status.config(text=f'Playing {self._playlist_index + 1}/{n}… (focus game window)')
+        self.pl_status.config(text=f'Playing {self._playlist_index + 1}/{n}… (focus game window)')
+        self._pl_select_playing()
+        if item[0] == 'file':
+            self._start_file_playback(item[1], keep_source=True)
+        else:
+            sid, title = item[1], item[2]
+            tempo = self.tempo.get()
+            transpose = self.transpose.get()
+
+            def do_download():
+                try:
+                    path = download_sequence_midi(sid, bpm=110, timeout=20)
+                    self.root.after(0, lambda: self._os_start_playback(path, tempo, transpose, keep_source=True))
+                except Exception as e:
+                    self.root.after(0, lambda: messagebox.showerror('Load failed', str(e)))
+                    self.root.after(0, lambda: self.pl_status.config(text='Load failed.'))
+                    self.playing = False
+                    self.root.after(0, self._progress_done)
+
+            threading.Thread(target=do_download, daemon=True).start()
 
     def _load_song_settings(self):
         """Load per-song tempo/transpose from JSON."""
@@ -946,19 +1204,7 @@ class App:
             return
         self.root.focus_set()
         focus_process_window('wwm.exe')
-        self._current_source = 'file'
-        self._stopped_by_user = False
-        self.playing = True
-        self.play_btn.config(state='disabled')
-        self.os_play_btn.config(state='disabled')
-        self.stop_btn.config(state='normal', bg=STOP_RED)
-        self.os_stop_btn.config(state='normal', bg=STOP_RED)
-        self.status.config(text='Playing... (focus game window)')
-        threading.Thread(
-            target=self._play_thread,
-            args=(path, self.tempo.get(), self.transpose.get()),
-            daemon=True
-        ).start()
+        self._start_file_playback(path)
 
     def _set_progress(self, current, total):
         if total <= 0:
@@ -967,26 +1213,43 @@ class App:
         self.progress_bar['value'] = current
         self.os_progress_bar['maximum'] = total
         self.os_progress_bar['value'] = current
+        if hasattr(self, 'pl_progress_bar'):
+            self.pl_progress_bar['maximum'] = total
+            self.pl_progress_bar['value'] = current
 
     def _progress_done(self):
         self.progress_bar['value'] = self.progress_bar['maximum']
         self.os_progress_bar['value'] = self.os_progress_bar['maximum']
+        if hasattr(self, 'pl_progress_bar'):
+            self.pl_progress_bar['value'] = self.pl_progress_bar['maximum']
         # Only switch to "stopped" state if we're not playing (e.g. we didn't just start a repeat)
         if not self.playing:
             if getattr(self, '_os_playing_path', None):
                 self._os_playing_path = None
             self.play_btn.config(state='normal')
             self.os_play_btn.config(state='normal')
+            if hasattr(self, 'pl_play_btn'):
+                self.pl_play_btn.config(state='normal')
+            if hasattr(self, 'pl_stop_btn'):
+                self.pl_stop_btn.config(state='disabled', bg=SUBTLE)
             self.stop_btn.config(state='disabled', bg=SUBTLE)
             self.os_stop_btn.config(state='disabled', bg=SUBTLE)
             self.os_status.config(text='Finished playing.')
+            if self._current_source == 'playlist' and hasattr(self, 'pl_status'):
+                self.pl_status.config(text='Finished playing.')
 
     def stop(self):
         self._stopped_by_user = True
         self.playing = False
         self.status.config(text='Stopped')
+        if self._current_source == 'playlist' and hasattr(self, 'pl_status'):
+            self.pl_status.config(text='Stopped.')
         self.play_btn.config(state='normal')
         self.os_play_btn.config(state='normal')
+        if hasattr(self, 'pl_play_btn'):
+            self.pl_play_btn.config(state='normal')
+        if hasattr(self, 'pl_stop_btn'):
+            self.pl_stop_btn.config(state='disabled', bg=SUBTLE)
         self.stop_btn.config(state='disabled', bg=SUBTLE)
         self.os_stop_btn.config(state='disabled', bg=SUBTLE)
 
@@ -1013,9 +1276,15 @@ class App:
             self.root.after(0, lambda: self._on_playback_finished(finished_naturally))
 
     def _on_playback_finished(self, finished_naturally: bool):
-        """Run on main thread when playback thread exits. Updates UI and optionally starts repeat."""
+        """Run on main thread when playback thread exits. Updates UI and optionally starts repeat or next playlist item."""
         if finished_naturally and not self._stopped_by_user:
-            self._maybe_repeat_current()
+            if self._current_source == 'playlist':
+                self._playlist_index += 1
+                if self._playlist_index < len(self._playlist):
+                    self.root.after(0, self._start_next_playlist_item)
+                    return
+            else:
+                self._maybe_repeat_current()
         self._progress_done()
 
     def _maybe_repeat_current(self):
