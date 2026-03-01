@@ -3,19 +3,23 @@
 import json
 import os
 import shutil
+import socket
+import tempfile
 import threading
+import time
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from tkinter import ttk
 
 from midi_to_macro import midi, playback
 from midi_to_macro.online_sequencer import (
+    download_sequence_midi,
     fetch_sequences,
     open_sequence,
-    download_sequence_midi,
     search_sequences,
     SORT_OPTIONS,
 )
+from midi_to_macro.sync import DEFAULT_PORT, Room, START_DELAY_SEC, get_lan_ip
 from midi_to_macro.window_focus import focus_process_window
 from midi_to_macro.theme import (
     ACCENT,
@@ -102,6 +106,9 @@ class App:
         # Playlist: list of ('file', path) or ('os', sid, title)
         self._playlist: list[tuple[str, ...]] = []
         self._playlist_index: int = 0
+        # Play together room (host or client)
+        self._room = Room()
+        self._sync_temp_paths: list[str] = []  # temp files from sync to delete later
 
         # Per-song tempo/transpose (persisted to JSON)
         self._song_settings: dict[str, dict[str, float | int]] = {}
@@ -633,6 +640,268 @@ class App:
         )
         self.pl_status.pack(anchor='w')
 
+        # ---- Tab 4: Play together ----
+        sync_tab = tk.Frame(notebook, bg=CARD)
+        notebook.add(sync_tab, text='  Play together  ')
+        sync_frame = tk.LabelFrame(
+            sync_tab, text='  Room  ', font=LABEL_FONT,
+            fg=SUBTLE, bg=CARD, labelanchor='n'
+        )
+        sync_frame.pack(fill='both', expand=True, padx=PAD, pady=(0, PAD))
+        sync_inner = tk.Frame(sync_frame, bg=CARD)
+        sync_inner.pack(fill='both', expand=True, padx=PAD, pady=(SMALL_PAD, PAD))
+        tk.Label(
+            sync_inner, text='Host a room or join one. When the host presses Play, everyone starts together.',
+            font=LABEL_FONT, fg=FG, bg=CARD
+        ).pack(anchor='w')
+        # Host
+        host_frame = tk.Frame(sync_inner, bg=CARD)
+        host_frame.pack(fill='x', pady=(PAD, SMALL_PAD))
+        tk.Label(host_frame, text='Host room', font=LABEL_FONT, fg=FG, bg=CARD).pack(side='left', padx=(0, 8))
+        self.sync_port_var = tk.StringVar(value=str(DEFAULT_PORT))
+        sync_port_entry = tk.Entry(
+            host_frame, textvariable=self.sync_port_var, width=6,
+            font=LABEL_FONT, bg=ENTRY_BG, fg=ENTRY_FG, relief='flat', highlightthickness=0
+        )
+        sync_port_entry.pack(side='left', padx=(0, 8))
+        self.sync_host_btn = tk.Button(
+            host_frame, text='Start hosting', command=self._sync_start_host,
+            font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
+            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1], cursor='hand2'
+        )
+        self.sync_host_btn.pack(side='left', padx=(0, 4))
+        self.sync_host_btn.bind('<Enter>', lambda e: self.sync_host_btn.configure(bg=ACCENT))
+        self.sync_host_btn.bind('<Leave>', lambda e: self.sync_host_btn.configure(bg=SUBTLE))
+        self.sync_stop_host_btn = tk.Button(
+            host_frame, text='Stop hosting', command=self._sync_stop_host, state='disabled',
+            font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
+            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1], cursor='hand2'
+        )
+        self.sync_stop_host_btn.pack(side='left')
+        self.sync_stop_host_btn.bind('<Enter>', lambda e: self.sync_stop_host_btn.configure(bg=ACCENT))
+        self.sync_stop_host_btn.bind('<Leave>', lambda e: self.sync_stop_host_btn.configure(bg=SUBTLE))
+        self.sync_host_status = tk.Label(
+            host_frame, text='', font=SMALL_FONT, fg=SUBTLE, bg=CARD
+        )
+        self.sync_host_status.pack(side='left', padx=(PAD, 0))
+        self.sync_firewall_hint = tk.Label(
+            sync_inner, text='If others can\'t connect: allow this app in Windows Firewall (Private network).',
+            font=HINT_FONT, fg=SUBTLE, bg=CARD
+        )
+        # Join
+        join_frame = tk.Frame(sync_inner, bg=CARD)
+        join_frame.pack(fill='x', pady=(SMALL_PAD, PAD))
+        tk.Label(join_frame, text='Join room', font=LABEL_FONT, fg=FG, bg=CARD).pack(side='left', padx=(0, 8))
+        self.sync_join_var = tk.StringVar(value='')
+        sync_join_entry = tk.Entry(
+            join_frame, textvariable=self.sync_join_var, width=24,
+            font=LABEL_FONT, bg=ENTRY_BG, fg=ENTRY_FG, relief='flat', highlightthickness=0
+        )
+        sync_join_entry.pack(side='left', padx=(0, 8), fill='x', expand=True)
+        tk.Label(join_frame, text='(host IP:port)', font=SMALL_FONT, fg=SUBTLE, bg=CARD).pack(side='left', padx=(0, 4))
+        self.sync_join_btn = tk.Button(
+            join_frame, text='Connect', command=self._sync_join,
+            font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
+            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1], cursor='hand2'
+        )
+        self.sync_join_btn.pack(side='left', padx=(0, 4))
+        self.sync_join_btn.bind('<Enter>', lambda e: self.sync_join_btn.configure(bg=ACCENT))
+        self.sync_join_btn.bind('<Leave>', lambda e: self.sync_join_btn.configure(bg=SUBTLE))
+        self.sync_disconnect_btn = tk.Button(
+            join_frame, text='Disconnect', command=self._sync_disconnect, state='disabled',
+            font=LABEL_FONT, bg=SUBTLE, fg=FG, activebackground=ENTRY_BG,
+            activeforeground=FG, relief='flat', padx=BTN_PAD[0], pady=BTN_PAD[1], cursor='hand2'
+        )
+        self.sync_disconnect_btn.pack(side='left')
+        self.sync_disconnect_btn.bind('<Enter>', lambda e: self.sync_disconnect_btn.configure(bg=ACCENT))
+        self.sync_disconnect_btn.bind('<Leave>', lambda e: self.sync_disconnect_btn.configure(bg=SUBTLE))
+        self.sync_status = tk.Label(
+            sync_inner, text='Not connected.',
+            font=SMALL_FONT, fg=SUBTLE, bg=CARD
+        )
+        self.sync_status.pack(anchor='w')
+        self._sync_register_room_callbacks()
+
+    def _sync_register_room_callbacks(self):
+        """Register room callbacks; all run via root.after on main thread."""
+        def on_clients_changed(n: int):
+            self.root.after(0, lambda: self._sync_update_host_status(n))
+        def on_connected():
+            self.root.after(0, self._sync_update_joined_ui)
+        def on_disconnected():
+            self.root.after(0, self._sync_update_disconnected_ui)
+        def on_play_file(start_in: float, midi_bytes: bytes, tempo: float, transpose: int):
+            self.root.after(0, lambda: self._sync_received_play_file(start_in, midi_bytes, tempo, transpose))
+        def on_play_os(start_in: float, sid: str, tempo: float, transpose: int):
+            self.root.after(0, lambda: self._sync_received_play_os(start_in, sid, tempo, transpose))
+        self._room.on_clients_changed = on_clients_changed
+        self._room.on_connected = on_connected
+        self._room.on_disconnected = on_disconnected
+        self._room.on_play_file = on_play_file
+        self._room.on_play_os = on_play_os
+
+    def _sync_update_host_status(self, n: int):
+        if not self._room.is_host():
+            return
+        addr = get_lan_ip()
+        self.sync_host_status.config(text=f'Room: {addr}:{self.sync_port_var.get()}  —  {n} participant(s)')
+
+    def _sync_start_host(self):
+        try:
+            port = int(self.sync_port_var.get().strip())
+        except ValueError:
+            messagebox.showwarning('Invalid port', 'Enter a number for the port.')
+            return
+        if port <= 0 or port > 65535:
+            messagebox.showwarning('Invalid port', 'Port must be between 1 and 65535.')
+            return
+        actual = self._room.start_host(port)
+        if actual == 0:
+            messagebox.showerror('Host failed', 'Could not start the room (port in use?).')
+            return
+        self.sync_port_var.set(str(actual))
+        self.sync_host_btn.config(state='disabled')
+        self.sync_stop_host_btn.config(state='normal')
+        self.sync_join_btn.config(state='disabled')
+        self.sync_disconnect_btn.config(state='disabled')  # only for client
+        self.sync_status.config(text='You are the host. Select music and press Play — others will follow.')
+        self._sync_update_host_status(0)
+        self.sync_firewall_hint.pack(anchor='w', pady=(0, SMALL_PAD))
+
+    def _sync_stop_host(self):
+        self._room.stop_host()
+        self.sync_host_btn.config(state='normal')
+        self.sync_stop_host_btn.config(state='disabled')
+        self.sync_join_btn.config(state='normal')
+        self.sync_host_status.config(text='')
+        self.sync_firewall_hint.pack_forget()
+        self.sync_status.config(text='Not connected.')
+
+    def _sync_join(self):
+        s = self.sync_join_var.get().strip()
+        if ':' not in s:
+            messagebox.showwarning('Invalid address', 'Enter host:port (e.g. 192.168.1.10:38472)')
+            return
+        host, port_str = s.rsplit(':', 1)
+        try:
+            port = int(port_str)
+        except ValueError:
+            messagebox.showwarning('Invalid port', 'Enter a number for the port.')
+            return
+        if not self._room.connect(host.strip(), port):
+            messagebox.showerror('Connect failed', 'Could not connect to the host.')
+            return
+        self.sync_join_btn.config(state='disabled')
+        self.sync_disconnect_btn.config(state='normal')
+        self.sync_host_btn.config(state='disabled')
+        self.sync_status.config(text='Connected. Waiting for host to play.')
+
+    def _sync_update_joined_ui(self):
+        self.sync_join_btn.config(state='disabled')
+        self.sync_disconnect_btn.config(state='normal')
+        self.sync_host_btn.config(state='disabled')
+        self.sync_status.config(text='Connected. Waiting for host to play.')
+
+    def _sync_update_disconnected_ui(self):
+        self.sync_join_btn.config(state='normal')
+        self.sync_disconnect_btn.config(state='disabled')
+        self.sync_host_btn.config(state='normal')
+        self.sync_status.config(text='Disconnected.')
+
+    def _sync_disconnect(self):
+        if not self._room.is_client():
+            return
+        self._room.disconnect()
+        self.sync_join_btn.config(state='normal')
+        self.sync_disconnect_btn.config(state='disabled')
+        self.sync_host_btn.config(state='normal')
+        self.sync_status.config(text='Disconnected.')
+
+    def _sync_received_play_file(self, start_in_sec: float, midi_bytes: bytes, tempo: float, transpose: int):
+        """Client (or host) received play_file: write temp file, schedule playback at now + start_in_sec."""
+        if not playback.KEYBOARD_AVAILABLE:
+            return
+        try:
+            f = tempfile.NamedTemporaryFile(suffix='.mid', delete=False)
+            f.write(midi_bytes)
+            f.close()
+            path = f.name
+            self._sync_temp_paths.append(path)
+        except OSError:
+            return
+        start_at = time.time() + start_in_sec
+        def wait_then_play():
+            delay = start_at - time.time()
+            if delay > 0:
+                time.sleep(delay)
+            self.root.after(0, lambda: self._sync_start_file_playback(path, tempo, transpose))
+        threading.Thread(target=wait_then_play, daemon=True).start()
+
+    def _sync_start_file_playback(self, path: str, tempo: float, transpose: int):
+        """Start playback from a path (sync received file); runs on main thread."""
+        self._current_source = 'sync'
+        self._stopped_by_user = False
+        self.playing = True
+        self.play_btn.config(state='disabled')
+        self.os_play_btn.config(state='disabled')
+        if hasattr(self, 'pl_play_btn'):
+            self.pl_play_btn.config(state='disabled')
+        if hasattr(self, 'pl_stop_btn'):
+            self.pl_stop_btn.config(state='normal', bg=STOP_RED)
+        self.stop_btn.config(state='normal', bg=STOP_RED)
+        self.os_stop_btn.config(state='normal', bg=STOP_RED)
+        self.status.config(text='Playing… (synced)')
+        self.os_status.config(text='Playing… (synced)')
+        if hasattr(self, 'sync_status'):
+            self.sync_status.config(text='Playing…')
+        threading.Thread(
+            target=self._play_thread,
+            args=(path, tempo, transpose),
+            daemon=True
+        ).start()
+
+    def _sync_received_play_os(self, start_in_sec: float, sid: str, tempo: float, transpose: int):
+        """Client received play_os: download then schedule playback at now + start_in_sec."""
+        if not playback.KEYBOARD_AVAILABLE:
+            return
+        start_at = time.time() + start_in_sec
+        def download_and_schedule():
+            try:
+                path = download_sequence_midi(sid, bpm=110, timeout=20)
+            except Exception:
+                self.root.after(0, lambda: self.sync_status.config(text='Download failed.'))
+                return
+            delay = start_at - time.time()
+            if delay > 0:
+                time.sleep(delay)
+            self.root.after(0, lambda: self._sync_start_os_playback(path, tempo, transpose))
+        threading.Thread(target=download_and_schedule, daemon=True).start()
+
+    def _sync_start_os_playback(self, path: str, tempo: float, transpose: int):
+        """Start playback from OS path (sync); runs on main thread."""
+        self._os_last_midi_path = path
+        self._current_source = 'sync'
+        self._stopped_by_user = False
+        self.playing = True
+        self.play_btn.config(state='disabled')
+        self.os_play_btn.config(state='disabled')
+        if hasattr(self, 'pl_play_btn'):
+            self.pl_play_btn.config(state='disabled')
+        if hasattr(self, 'pl_stop_btn'):
+            self.pl_stop_btn.config(state='normal', bg=STOP_RED)
+        self.stop_btn.config(state='normal', bg=STOP_RED)
+        self.os_stop_btn.config(state='normal', bg=STOP_RED)
+        self.status.config(text='Playing… (synced)')
+        self.os_status.config(text='Playing… (synced)')
+        if hasattr(self, 'sync_status'):
+            self.sync_status.config(text='Playing…')
+        self._os_playing_path = path
+        threading.Thread(
+            target=self._play_thread,
+            args=(path, tempo, transpose),
+            daemon=True
+        ).start()
+
     def _load_sequences(self):
         label = (self.os_sort_menu.get() or 'Newest').strip()
         sort = next((v for v, l in SORT_OPTIONS if l == label), '1')
@@ -777,12 +1046,27 @@ class App:
         def do_load_and_play():
             try:
                 path = download_sequence_midi(sid, bpm=110, timeout=20)
-                self.root.after(0, lambda: self._os_start_playback(path, tempo, transpose))
+                self.root.after(0, lambda: self._on_os_downloaded_for_play(path, sid, tempo, transpose))
             except Exception as e:
                 self.root.after(0, lambda: messagebox.showerror('Load failed', str(e)))
                 self.root.after(0, lambda: self.os_status.config(text='Load failed.'))
 
         threading.Thread(target=do_load_and_play, daemon=True).start()
+
+    def _on_os_downloaded_for_play(self, path: str, sid: str, tempo: float, transpose: int):
+        """Called on main thread when OS MIDI is downloaded. If host, broadcast and sync start; else start now."""
+        if self._room.is_host():
+            self._room.send_play_os(START_DELAY_SEC, sid, tempo, transpose)
+            start_at = time.time() + START_DELAY_SEC
+            def wait_then_play():
+                delay = start_at - time.time()
+                if delay > 0:
+                    time.sleep(delay)
+                self.root.after(0, lambda: self._sync_start_os_playback(path, tempo, transpose))
+            threading.Thread(target=wait_then_play, daemon=True).start()
+            self.os_status.config(text=f'Starting in {int(START_DELAY_SEC)}s… (synced)')
+        else:
+            self._os_start_playback(path, tempo, transpose)
 
     def _os_start_playback(self, path: str, tempo_multiplier: float, transpose: int, keep_source: bool = False):
         """Start playback for an OS-downloaded MIDI path (called on main thread). If keep_source True, do not set _current_source (playlist)."""
@@ -1204,6 +1488,26 @@ class App:
             return
         self.root.focus_set()
         focus_process_window('wwm.exe')
+        # Host: broadcast and start together after START_DELAY_SEC
+        if self._room.is_host():
+            try:
+                with open(path, 'rb') as f:
+                    midi_bytes = f.read()
+            except OSError as e:
+                messagebox.showerror('Error', str(e))
+                return
+            tempo = self.tempo.get()
+            transpose = self.transpose.get()
+            self._room.send_play_file(START_DELAY_SEC, midi_bytes, tempo, transpose)
+            start_at = time.time() + START_DELAY_SEC
+            def wait_then_play():
+                delay = start_at - time.time()
+                if delay > 0:
+                    time.sleep(delay)
+                self.root.after(0, lambda: self._sync_start_file_playback(path, tempo, transpose))
+            threading.Thread(target=wait_then_play, daemon=True).start()
+            self.status.config(text=f'Starting in {int(START_DELAY_SEC)}s… (synced)')
+            return
         self._start_file_playback(path)
 
     def _set_progress(self, current, total):
@@ -1237,6 +1541,8 @@ class App:
             self.os_status.config(text='Finished playing.')
             if self._current_source == 'playlist' and hasattr(self, 'pl_status'):
                 self.pl_status.config(text='Finished playing.')
+            if self._current_source == 'sync' and hasattr(self, 'sync_status'):
+                self.sync_status.config(text='Finished. Waiting for host to play.' if self._room.is_client() else 'You are the host. Select music and press Play — others will follow.')
 
     def stop(self):
         self._stopped_by_user = True
@@ -1244,6 +1550,8 @@ class App:
         self.status.config(text='Stopped')
         if self._current_source == 'playlist' and hasattr(self, 'pl_status'):
             self.pl_status.config(text='Stopped.')
+        if self._current_source == 'sync' and hasattr(self, 'sync_status'):
+            self.sync_status.config(text='Stopped.')
         self.play_btn.config(state='normal')
         self.os_play_btn.config(state='normal')
         if hasattr(self, 'pl_play_btn'):
