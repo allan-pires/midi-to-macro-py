@@ -36,21 +36,22 @@ LISTBOX_MIN_ROWS = 8
 OS_LISTBOX_MIN_ROWS = 8
 HINT_WRAP = 280
 
-# Button icons (Unicode; use with tooltip for hover hint)
-ICON_PLAY = '▶'
-ICON_STOP = '■'
+# Button icons — use emoji so they render in color with ICON_FONT (Segoe UI Emoji)
+ICON_FONT = ('Segoe UI Emoji', 10)
+ICON_PLAY = '▶️'
+ICON_STOP = '⏹️'
 ICON_FOLDER = '📁'
-ICON_ADD_LIST = '⊕'
-ICON_ADD_TO_PLAYLIST = '➕'  # add current file/sequence to playlist
-ICON_FAV = '★'
+ICON_ADD_LIST = '📋'
+ICON_ADD_TO_PLAYLIST = '➕'
+ICON_FAV = '⭐'
 ICON_FAV_OFF = '☆'
-ICON_SEARCH = '⌕'
-ICON_RELOAD = '↻'
+ICON_SEARCH = '🔍'
+ICON_RELOAD = '🔄'
 ICON_BROWSER = '🌐'
-ICON_REMOVE = '−'
-ICON_CLEAR = '✕'
-ICON_HOST = '◉'
-ICON_CONNECT = '⚡'
-ICON_DISCONNECT = '✕'
-ICON_DOWNLOAD = '↓'
+ICON_REMOVE = '➖'
+ICON_CLEAR = '🗑️'
+ICON_HOST = '🏠'
+ICON_CONNECT = '🔗'
+ICON_DISCONNECT = '❌'
+ICON_DOWNLOAD = '📥'
 ICON_SAVE = '💾'
