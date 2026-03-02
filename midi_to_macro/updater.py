@@ -18,6 +18,28 @@ from midi_to_macro.version import (
 )
 
 
+# Headers sent on every request (including after redirects) so GitHub/CDN returns the binary
+_DOWNLOAD_HEADERS = {
+    "Accept": "application/octet-stream",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+}
+
+
+class _RedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Re-add our headers when following redirects so the asset CDN gets Accept and User-Agent."""
+
+    def redirect_request(self, req, fp, code, msg, hdrs, newurl):
+        new_req = super().redirect_request(req, fp, code, msg, hdrs, newurl)
+        if new_req is not None:
+            for key, value in _DOWNLOAD_HEADERS.items():
+                new_req.add_header(key, value)
+        return new_req
+
+
+def _build_download_opener():
+    return urllib.request.build_opener(_RedirectHandler)
+
+
 def _parse_version(s: str) -> tuple[int, ...]:
     """Convert version string to comparable tuple (e.g. '1.2.3' -> (1, 2, 3))."""
     s = re.sub(r"[^0-9.].*$", "", s.strip())
@@ -114,18 +136,17 @@ def download_update(
     """
     if not download_url:
         return None
+
+    opener = _build_download_opener()
+    req = urllib.request.Request(download_url, headers=_DOWNLOAD_HEADERS)
     try:
-        req = urllib.request.Request(
-            download_url,
-            headers={
-                "Accept": "application/octet-stream",
-                "User-Agent": "midi-to-macro-updater",
-            },
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with opener.open(req, timeout=timeout) as resp:
             data = resp.read()
-    except (urllib.error.URLError, OSError, ValueError):
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError, ValueError):
         return None
+    if not data:
+        return None
+
     filename = download_url.split("/")[-1].split("?")[0] or "update"
 
     if filename.lower().endswith(".zip") and save_dir:
