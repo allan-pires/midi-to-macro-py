@@ -31,8 +31,14 @@ PAD = 8
 SMALL_PAD = 4
 BTN_PAD = (4, 0)
 BTN_GAP = 4  # gap between icon buttons
-BTN_GAP_TIGHT = 0  # gap between bottom control buttons (Play, Stop, etc.)
+BTN_GAP_TIGHT = 0  # gap between bottom control buttons (Play, Stop) — use CTRL_BTN_GAP for that
+CTRL_BTN_GAP = 8   # space between Play and Stop buttons
 BTN_PAD_LARGE = (1, 0)  # less padding for large control buttons so they sit closer
+# Control buttons (play/stop): drawn icons, rounded rect, hover/active states
+# (Avoid small widths like 44/46: Tk can treat them as window ids → "bad argument 'N': must be name of window")
+CTRL_BTN_WIDTH = 52
+CTRL_BTN_HEIGHT = 32
+CTRL_BTN_RADIUS = 8
 ICON_BTN_WIDTH = 3  # width in chars for icon-only buttons (uniform size)
 
 # Layout (compact enough that control row stays visible on lower-res / small screens)

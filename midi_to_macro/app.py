@@ -40,6 +40,7 @@ BTN_GAP_TIGHT = _t.BTN_GAP_TIGHT
 BTN_PAD_LARGE = _t.BTN_PAD_LARGE
 CARD = _t.CARD
 CARD_BORDER = _t.CARD_BORDER
+CTRL_BTN_GAP = _t.CTRL_BTN_GAP
 ENTRY_BG = _t.ENTRY_BG
 ENTRY_FG = _t.ENTRY_FG
 FONT_FAMILY = _t.FONT_FAMILY
@@ -83,16 +84,134 @@ TITLE_FONT = _t.TITLE_FONT
 LABEL_FONT = _t.LABEL_FONT
 
 
+# Play/Stop symbols (no Canvas — avoids Tk "bad argument 'N': must be name of window" on some builds)
+_CTRL_PLAY_SYMBOL = '\u25b6'   # ▶
+_CTRL_STOP_SYMBOL = '\u25a0'   # ■
+
+# Control button shape: less tall, rounded corners (used if Pillow available)
+_CTRL_BTN_W = 56
+_CTRL_BTN_H = 22
+_CTRL_BTN_R = 6
+
+
+def _rounded_rect_photo(w: int, h: int, color_hex: str, radius: int):
+    """Return a PhotoImage of a rounded rectangle (Pillow). Kept for GC."""
+    try:
+        from PIL import Image, ImageDraw, ImageTk
+        img = Image.new("RGB", (w, h), color_hex)
+        draw = ImageDraw.Draw(img)
+        draw.rounded_rectangle([0, 0, w - 1, h - 1], radius=radius, fill=color_hex, outline=color_hex)
+        return ImageTk.PhotoImage(img)
+    except Exception:
+        return None
+
+
+class ControlButton(tk.Frame):
+    """Play or Stop control button: rounded rect image if Pillow available, else flat tk.Button."""
+
+    def __init__(self, parent, kind, bg, hover_bg, fg, command, initial_state=tk.NORMAL, disabled_bg=None):
+        assert kind in ('play', 'stop'), kind
+        self._bg = bg
+        self._hover_bg = hover_bg
+        self._disabled_bg = disabled_bg if disabled_bg is not None else CARD
+        self._command = command
+        self._state = initial_state
+        self._kind = kind
+        text = _CTRL_PLAY_SYMBOL if kind == 'play' else _CTRL_STOP_SYMBOL
+        super().__init__(parent, bg=CARD)
+        # Fixed size so button doesn't shrink when state changes (e.g. play disabled while playing)
+        self.pack_propagate(False)
+        tk.Frame.config(self, width=_CTRL_BTN_W, height=_CTRL_BTN_H)
+        # Rounded-rect images (keep refs so they aren't GC'd)
+        self._img_normal = _rounded_rect_photo(_CTRL_BTN_W, _CTRL_BTN_H, bg, _CTRL_BTN_R)
+        self._img_hover = _rounded_rect_photo(_CTRL_BTN_W, _CTRL_BTN_H, hover_bg, _CTRL_BTN_R)
+        self._img_disabled = _rounded_rect_photo(_CTRL_BTN_W, _CTRL_BTN_H, self._disabled_bg, _CTRL_BTN_R)
+        use_rounded = self._img_normal is not None
+        show_disabled = initial_state == tk.DISABLED
+        init_bg = self._disabled_bg if show_disabled else bg
+        if use_rounded:
+            self._btn = tk.Button(
+                self, text=text, font=(FONT_FAMILY, 11), fg=fg,
+                image=self._img_disabled if show_disabled else self._img_normal,
+                compound='center',
+                bg=init_bg,
+                activebackground=init_bg, activeforeground=fg,
+                highlightbackground=init_bg, highlightcolor=init_bg,
+                relief='flat', bd=0, highlightthickness=0, padx=0, pady=0,
+                cursor='hand2', command=command, state=initial_state,
+                disabledforeground=FG_DISABLED, takefocus=0,
+            )
+        else:
+            self._btn = tk.Button(
+                self, text=text, font=(FONT_FAMILY, 12), fg=fg,
+                bg=init_bg,
+                activebackground=init_bg, activeforeground=fg,
+                highlightbackground=init_bg, highlightcolor=init_bg,
+                relief='flat', padx=18, pady=3, cursor='hand2',
+                command=command, state=initial_state,
+                disabledforeground=FG_DISABLED, takefocus=0,
+            )
+        self._use_rounded = use_rounded
+        self._btn.pack()
+        self._btn.bind('<Enter>', self._on_enter)
+        self._btn.bind('<Leave>', self._on_leave)
+
+    def _current_image(self):
+        if self._btn['state'] == 'disabled':
+            return self._img_disabled
+        return self._img_normal
+
+    def _apply_bg(self, color):
+        """Set bg and matching border/active colors so no visible border mismatch."""
+        self._btn.configure(
+            bg=color, activebackground=color,
+            highlightbackground=color, highlightcolor=color,
+        )
+
+    def _on_enter(self, e):
+        if self._btn['state'] == 'normal':
+            self._apply_bg(self._hover_bg)
+            if self._use_rounded:
+                self._btn.configure(image=self._img_hover)
+        else:
+            self._apply_bg(self._disabled_bg)
+            if self._use_rounded:
+                self._btn.configure(image=self._img_disabled)
+
+    def _on_leave(self, e):
+        color = self._disabled_bg if self._btn['state'] == 'disabled' else self._bg
+        self._apply_bg(color)
+        if self._use_rounded:
+            self._btn.configure(image=self._current_image())
+
+    def config(self, **kwargs):
+        if 'state' in kwargs:
+            self._btn.config(state=kwargs['state'])
+        if 'bg' in kwargs:
+            self._bg = kwargs['bg']
+            self._apply_bg(self._bg)
+        if self._use_rounded and ('state' in kwargs or 'bg' in kwargs):
+            self._btn.configure(image=self._current_image())
+        if 'state' in kwargs and kwargs['state'] == 'disabled':
+            self._apply_bg(self._disabled_bg)
+
+    def __getitem__(self, key):
+        if key == 'state':
+            return self._btn['state']
+        raise KeyError(key)
+
+
 class App:
     def __init__(self, root):
         self.root = root
         root.title('Where Songs Meet')
         root.attributes('-topmost', True)
         self.playing = False
+        self._stop_buttons_enabled = False  # enable only when playback actually starts (first progress)
 
         root.configure(bg=BG)
         root.minsize(360, 520)
-        root.geometry('440x640')
+        root.geometry('450x640')
         root.option_add('*Font', LABEL_FONT)
         root.option_add('*Background', BG)
         root.option_add('*Foreground', FG)
@@ -210,6 +329,7 @@ class App:
         header = tk.Frame(root, bg=BG)
         header.pack(fill='x', padx=PAD, pady=(PAD, 2))
         tk.Label(header, text='Where Songs Meet', font=TITLE_FONT, fg=ACCENT, bg=BG).pack(side='left', anchor='w')
+        tk.Label(header, text=f'  v{APP_VERSION}', font=SMALL_FONT, fg=SUBTLE, bg=BG).pack(side='left', anchor='w')
         header_btns = tk.Frame(header, bg=BG)
         header_btns.pack(side='right')
         self._update_btn = tk.Button(
@@ -318,12 +438,9 @@ class App:
                 self._transpose_scale.config(length=w)
         transpose_row.bind('<Configure>', _resize_transpose_scale)
 
-        def _apply_file_scale_sizes():
-            if tempo_row.winfo_width() > 1:
-                self._tempo_scale.config(length=max(60, tempo_row.winfo_width()))
-            if transpose_row.winfo_width() > 1:
-                self._transpose_scale.config(length=max(60, transpose_row.winfo_width()))
-        root.after_idle(_apply_file_scale_sizes)
+        # Set initial scale lengths once (update_idletasks then direct call — no after_idle to avoid "invalid command name" when packaged)
+        root.update_idletasks()
+        self._apply_file_scale_sizes()
 
         # Save tempo/transpose for this song (File tab)
         def _on_save_file_cb():
@@ -348,28 +465,16 @@ class App:
         # Actions
         actions = tk.Frame(file_tab, bg=CARD)
         actions.pack(fill='x', padx=PAD, pady=(0, 2))
-        self.play_btn = tk.Button(
-            actions, command=self.play,
-            **_icon_btn_kwargs('PLAY', large=True, fg=BG, activeforeground=BG, activebackground=PLAY_GREEN_HOVER)
+        self.play_btn = ControlButton(
+            actions, kind='play', bg=PLAY_GREEN, hover_bg=PLAY_GREEN_HOVER, fg=BG,
+            command=self.play, initial_state=tk.NORMAL
         )
-        self.play_btn.grid(row=0, column=0, padx=(0, BTN_GAP_TIGHT))
-        self.play_btn.bind('<Enter>', lambda e: self.play_btn.configure(bg=PLAY_GREEN_HOVER))
-        self.play_btn.bind('<Leave>', lambda e: self.play_btn.configure(bg=CARD))
-        self.stop_btn = tk.Button(
-            actions, command=self.stop, state='disabled',
-            **_icon_btn_kwargs('STOP', large=True, disabledforeground=FG_DISABLED, activebackground=STOP_RED_HOVER, activeforeground=FG)
+        self.play_btn.grid(row=0, column=0, padx=(0, CTRL_BTN_GAP))
+        self.stop_btn = ControlButton(
+            actions, kind='stop', bg=STOP_RED, hover_bg=STOP_RED_HOVER, fg=BG,
+            command=self.stop, initial_state=tk.DISABLED, disabled_bg=SUBTLE
         )
-        self.stop_btn.grid(row=0, column=1, padx=(0, BTN_GAP_TIGHT))
-        def _stop_enter(e):
-            if self.stop_btn['state'] == 'normal':
-                self.stop_btn.configure(bg=STOP_RED_HOVER)
-        def _stop_leave(e):
-            if self.stop_btn['state'] == 'normal':
-                self.stop_btn.configure(bg=STOP_RED)
-            else:
-                self.stop_btn.configure(bg=CARD)
-        self.stop_btn.bind('<Enter>', _stop_enter)
-        self.stop_btn.bind('<Leave>', _stop_leave)
+        self.stop_btn.grid(row=0, column=1, padx=(0, CTRL_BTN_GAP))
         actions.columnconfigure(2, weight=1)
         repeat_file_btn = tk.Checkbutton(
             actions, text='Repeat', variable=self.repeat_file,
@@ -600,28 +705,16 @@ class App:
         self._os_last_midi_path: str | None = None
         os_actions = tk.Frame(os_tab, bg=CARD)
         os_actions.pack(fill='x', padx=PAD, pady=(SMALL_PAD, 2))
-        self.os_play_btn = tk.Button(
-            os_actions, command=self._load_and_play_sequence,
-            **_icon_btn_kwargs('PLAY', large=True, fg=BG, activeforeground=BG, activebackground=PLAY_GREEN_HOVER)
+        self.os_play_btn = ControlButton(
+            os_actions, kind='play', bg=PLAY_GREEN, hover_bg=PLAY_GREEN_HOVER, fg=BG,
+            command=self._load_and_play_sequence, initial_state=tk.NORMAL
         )
-        self.os_play_btn.grid(row=0, column=0, padx=(0, BTN_GAP_TIGHT))
-        self.os_play_btn.bind('<Enter>', lambda e: self.os_play_btn.configure(bg=PLAY_GREEN_HOVER))
-        self.os_play_btn.bind('<Leave>', lambda e: self.os_play_btn.configure(bg=CARD))
-        self.os_stop_btn = tk.Button(
-            os_actions, command=self.stop, state='disabled',
-            **_icon_btn_kwargs('STOP', large=True, disabledforeground=FG_DISABLED, activebackground=STOP_RED_HOVER, activeforeground=FG)
+        self.os_play_btn.grid(row=0, column=0, padx=(0, CTRL_BTN_GAP))
+        self.os_stop_btn = ControlButton(
+            os_actions, kind='stop', bg=STOP_RED, hover_bg=STOP_RED_HOVER, fg=BG,
+            command=self.stop, initial_state=tk.DISABLED, disabled_bg=SUBTLE
         )
-        self.os_stop_btn.grid(row=0, column=1, padx=(0, BTN_GAP_TIGHT))
-        def _os_stop_enter(e):
-            if self.os_stop_btn['state'] == 'normal':
-                self.os_stop_btn.configure(bg=STOP_RED_HOVER)
-        def _os_stop_leave(e):
-            if self.os_stop_btn['state'] == 'normal':
-                self.os_stop_btn.configure(bg=STOP_RED)
-            else:
-                self.os_stop_btn.configure(bg=CARD)
-        self.os_stop_btn.bind('<Enter>', _os_stop_enter)
-        self.os_stop_btn.bind('<Leave>', _os_stop_leave)
+        self.os_stop_btn.grid(row=0, column=1, padx=(0, CTRL_BTN_GAP))
         os_actions.columnconfigure(2, weight=1)
         _tooltip(self.os_play_btn, self.os_status, 'Play')
         _tooltip(self.os_stop_btn, self.os_status, 'Stop')
@@ -694,28 +787,16 @@ class App:
         pl_actions = tk.Frame(playlist_tab, bg=CARD)
         pl_actions.pack(fill='x', padx=PAD, pady=(SMALL_PAD, 2))
         pl_actions.columnconfigure(2, weight=1)
-        self.pl_play_btn = tk.Button(
-            pl_actions, command=self._play_playlist,
-            **_icon_btn_kwargs('PLAY', large=True, fg=BG, activeforeground=BG, activebackground=PLAY_GREEN_HOVER)
+        self.pl_play_btn = ControlButton(
+            pl_actions, kind='play', bg=PLAY_GREEN, hover_bg=PLAY_GREEN_HOVER, fg=BG,
+            command=self._play_playlist, initial_state=tk.NORMAL
         )
-        self.pl_play_btn.grid(row=0, column=0, padx=(0, BTN_GAP_TIGHT))
-        self.pl_play_btn.bind('<Enter>', lambda e: self.pl_play_btn.configure(bg=PLAY_GREEN_HOVER))
-        self.pl_play_btn.bind('<Leave>', lambda e: self.pl_play_btn.configure(bg=CARD))
-        self.pl_stop_btn = tk.Button(
-            pl_actions, command=self.stop, state='disabled',
-            **_icon_btn_kwargs('STOP', large=True, disabledforeground=FG_DISABLED, activebackground=STOP_RED_HOVER, activeforeground=FG)
+        self.pl_play_btn.grid(row=0, column=0, padx=(0, CTRL_BTN_GAP))
+        self.pl_stop_btn = ControlButton(
+            pl_actions, kind='stop', bg=STOP_RED, hover_bg=STOP_RED_HOVER, fg=BG,
+            command=self.stop, initial_state=tk.DISABLED, disabled_bg=SUBTLE
         )
-        self.pl_stop_btn.grid(row=0, column=1, padx=(0, BTN_GAP_TIGHT))
-        def _pl_stop_enter(e):
-            if self.pl_stop_btn['state'] == 'normal':
-                self.pl_stop_btn.configure(bg=STOP_RED_HOVER)
-        def _pl_stop_leave(e):
-            if self.pl_stop_btn['state'] == 'normal':
-                self.pl_stop_btn.configure(bg=STOP_RED)
-            else:
-                self.pl_stop_btn.configure(bg=CARD)
-        self.pl_stop_btn.bind('<Enter>', _pl_stop_enter)
-        self.pl_stop_btn.bind('<Leave>', _pl_stop_leave)
+        self.pl_stop_btn.grid(row=0, column=1, padx=(0, CTRL_BTN_GAP))
         repeat_pl_btn = tk.Checkbutton(
             pl_actions, text='Repeat', variable=self.repeat_playlist,
             font=LABEL_FONT, fg=FG, bg=CARD,
@@ -1106,10 +1187,7 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         self.os_play_btn.config(state='disabled')
         if hasattr(self, 'pl_play_btn'):
             self.pl_play_btn.config(state='disabled')
-        if hasattr(self, 'pl_stop_btn'):
-            self.pl_stop_btn.config(state='normal', bg=STOP_RED)
-        self.stop_btn.config(state='normal', bg=STOP_RED)
-        self.os_stop_btn.config(state='normal', bg=STOP_RED)
+        # Stop buttons enabled in _set_progress when playback actually starts
         self.status.config(text='Playing… (synced)')
         self.os_status.config(text='Playing… (synced)')
         if hasattr(self, 'sync_status'):
@@ -1150,10 +1228,7 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         self.os_play_btn.config(state='disabled')
         if hasattr(self, 'pl_play_btn'):
             self.pl_play_btn.config(state='disabled')
-        if hasattr(self, 'pl_stop_btn'):
-            self.pl_stop_btn.config(state='normal', bg=STOP_RED)
-        self.stop_btn.config(state='normal', bg=STOP_RED)
-        self.os_stop_btn.config(state='normal', bg=STOP_RED)
+        # Stop buttons enabled in _set_progress when playback actually starts
         self.status.config(text='Playing… (synced)')
         self.os_status.config(text='Playing… (synced)')
         if hasattr(self, 'sync_status'):
@@ -1345,10 +1420,7 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         self.os_play_btn.config(state='disabled')
         if hasattr(self, 'pl_play_btn'):
             self.pl_play_btn.config(state='disabled')
-        if hasattr(self, 'pl_stop_btn'):
-            self.pl_stop_btn.config(state='normal', bg=STOP_RED)
-        self.stop_btn.config(state='normal', bg=STOP_RED)
-        self.os_stop_btn.config(state='normal', bg=STOP_RED)
+        # Stop buttons enabled in _set_progress when playback actually starts
         self.status.config(text='Playing… (focus game window)')
         self._os_playing_path = path
         threading.Thread(
@@ -1513,9 +1585,7 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         self.play_btn.config(state='disabled')
         self.os_play_btn.config(state='disabled')
         self.pl_play_btn.config(state='disabled')
-        self.stop_btn.config(state='normal', bg=STOP_RED)
-        self.os_stop_btn.config(state='normal', bg=STOP_RED)
-        self.pl_stop_btn.config(state='normal', bg=STOP_RED)
+        # Stop buttons enabled in _set_progress when playback actually starts
         n = len(self._playlist)
         self.status.config(text=f'Playing 1/{n}… (focus game window)')
         self.os_status.config(text=f'Playing 1/{n}… (focus game window)')
@@ -1533,10 +1603,7 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         self.os_play_btn.config(state='disabled')
         if hasattr(self, 'pl_play_btn'):
             self.pl_play_btn.config(state='disabled')
-        if hasattr(self, 'pl_stop_btn'):
-            self.pl_stop_btn.config(state='normal', bg=STOP_RED)
-        self.stop_btn.config(state='normal', bg=STOP_RED)
-        self.os_stop_btn.config(state='normal', bg=STOP_RED)
+        # Stop buttons enabled in _set_progress when playback actually starts
         self.status.config(text='Playing... (focus game window)')
         threading.Thread(
             target=self._play_thread,
@@ -1587,6 +1654,18 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         self.os_listbox.delete(0, tk.END)
         for sid, title in self.os_sequences:
             self.os_listbox.insert(tk.END, self._os_display_line(sid, title))
+
+    def _apply_file_scale_sizes(self):
+        """Apply tempo/transpose row width to scales (called from after_idle so layout is done)."""
+        try:
+            tr = self._tempo_scale.master
+            if tr.winfo_width() > 1:
+                self._tempo_scale.config(length=max(60, tr.winfo_width()))
+            tr2 = self._transpose_scale.master
+            if tr2.winfo_width() > 1:
+                self._transpose_scale.config(length=max(60, tr2.winfo_width()))
+        except tk.TclError:
+            pass
 
     def _get_file_song_key(self) -> str | None:
         path = self.get_selected_file()
@@ -1680,6 +1759,13 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
     def _set_progress(self, current, total):
         if total <= 0:
             return
+        # Enable stop buttons only when playback has actually started (first progress)
+        if not self._stop_buttons_enabled:
+            self._stop_buttons_enabled = True
+            if hasattr(self, 'pl_stop_btn'):
+                self.pl_stop_btn.config(state='normal', bg=STOP_RED)
+            self.stop_btn.config(state='normal', bg=STOP_RED)
+            self.os_stop_btn.config(state='normal', bg=STOP_RED)
         self.progress_bar['maximum'] = total
         self.progress_bar['value'] = current
         self.os_progress_bar['maximum'] = total
@@ -1702,9 +1788,10 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
             if hasattr(self, 'pl_play_btn'):
                 self.pl_play_btn.config(state='normal')
             if hasattr(self, 'pl_stop_btn'):
-                self.pl_stop_btn.config(state='disabled', bg=CARD)
-            self.stop_btn.config(state='disabled', bg=CARD)
-            self.os_stop_btn.config(state='disabled', bg=CARD)
+                self.pl_stop_btn.config(state='disabled', bg=SUBTLE)
+            self.stop_btn.config(state='disabled', bg=SUBTLE)
+            self.os_stop_btn.config(state='disabled', bg=SUBTLE)
+            self._stop_buttons_enabled = False
             self.os_status.config(text='Finished playing.')
             if self._current_source == 'playlist' and hasattr(self, 'pl_status'):
                 self.pl_status.config(text='Finished playing.')
@@ -1724,9 +1811,10 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         if hasattr(self, 'pl_play_btn'):
             self.pl_play_btn.config(state='normal')
         if hasattr(self, 'pl_stop_btn'):
-            self.pl_stop_btn.config(state='disabled', bg=CARD)
-        self.stop_btn.config(state='disabled', bg=CARD)
-        self.os_stop_btn.config(state='disabled', bg=CARD)
+            self.pl_stop_btn.config(state='disabled', bg=SUBTLE)
+        self.stop_btn.config(state='disabled', bg=SUBTLE)
+        self.os_stop_btn.config(state='disabled', bg=SUBTLE)
+        self._stop_buttons_enabled = False
 
     def _play_thread(self, path, tempo_multiplier, transpose):
         def on_done(finished_naturally: bool):
