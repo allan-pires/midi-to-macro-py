@@ -267,6 +267,13 @@ class App:
         self._playlist = Playlist()
         self._room = Room()
         self._sync_temp_paths: list[str] = []
+        self._sync_my_reported_label = ''  # label we sent via report_playing (client)
+        self._sync_last_players: list = []  # last room_playing list (for client UI refresh)
+        # Last selection per tab (so Play together shows it even after switching tabs)
+        self._last_file_path: str | None = None
+        self._last_os_sid: str | None = None
+        self._last_os_title: str | None = None
+        self._last_tab_visited: str = 'file'  # 'file' or 'os'
 
         self._song_settings = SongSettings()
         self._os_favorites = OsFavorites(self._song_settings.settings_dir)
@@ -351,12 +358,12 @@ class App:
         self._update_btn.bind('<Leave>', lambda e: self._update_btn.configure(bg=BG))
 
         # Notebook: File tab + Online Sequencer tab
-        notebook = ttk.Notebook(root)
-        notebook.pack(fill='both', expand=True, padx=PAD, pady=(0, SMALL_PAD))
+        self.notebook = ttk.Notebook(root)
+        self.notebook.pack(fill='both', expand=True, padx=PAD, pady=(0, SMALL_PAD))
 
         # ---- Tab 1: File ----
-        file_tab = tk.Frame(notebook, bg=CARD)
-        notebook.add(file_tab, text='  File  ')
+        file_tab = tk.Frame(self.notebook, bg=CARD)
+        self.notebook.add(file_tab, text='  File  ')
 
         # File section: folder + list of .mid files
         file_frame = tk.LabelFrame(
@@ -521,8 +528,8 @@ class App:
         _tooltip(self.stop_btn, self.status, 'Stop')
 
         # ---- Tab 2: Online Sequencer ----
-        os_tab = tk.Frame(notebook, bg=CARD)
-        notebook.add(os_tab, text='  Online Sequencer  ')
+        os_tab = tk.Frame(self.notebook, bg=CARD)
+        self.notebook.add(os_tab, text='  Online Sequencer  ')
         os_sequences_frame = tk.LabelFrame(
             os_tab, text='  Sequences  ', font=LABEL_FONT,
             fg=SUBTLE, bg=CARD, labelanchor='n'
@@ -754,8 +761,8 @@ class App:
         ).pack(anchor='w')
 
         # ---- Tab 3: Playlist ----
-        playlist_tab = tk.Frame(notebook, bg=CARD)
-        notebook.add(playlist_tab, text='  Playlist  ')
+        playlist_tab = tk.Frame(self.notebook, bg=CARD)
+        self.notebook.add(playlist_tab, text='  Playlist  ')
         pl_frame = tk.LabelFrame(
             playlist_tab, text='  Playlist  ', font=LABEL_FONT,
             fg=SUBTLE, bg=CARD, labelanchor='n'
@@ -839,8 +846,8 @@ class App:
         _tooltip(repeat_pl_btn, self.pl_status, 'When finished, play playlist again from the beginning')
 
         # ---- Tab 4: Play together ----
-        sync_tab = tk.Frame(notebook, bg=BG)
-        notebook.add(sync_tab, text='  Play together  ')
+        sync_tab = tk.Frame(self.notebook, bg=BG)
+        self.notebook.add(sync_tab, text='  Play together  ')
         # Scrollable area so Join block is not cut off on low resolutions
         sync_canvas = tk.Canvas(sync_tab, bg=BG, highlightthickness=0)
         sync_scroll = tk.Scrollbar(sync_tab, orient='vertical', command=sync_canvas.yview)
@@ -953,6 +960,37 @@ class App:
         _tooltip(self.sync_stop_host_btn, sync_host_tooltip, 'Stop hosting')
         _tooltip(self.sync_join_btn, self.sync_status, 'Connect')
         _tooltip(self.sync_disconnect_btn, self.sync_status, 'Disconnect')
+        # Client option: play own selection at same time as host
+        self.sync_play_my_selection = tk.BooleanVar(value=False)
+        sync_options = tk.Frame(sync_frame, bg=BG)
+        sync_options.pack(fill='x', pady=(SMALL_PAD, 0))
+        self.sync_play_my_cb = tk.Checkbutton(
+            sync_options, text='Play my selection instead of host\'s (start at same time)',
+            variable=self.sync_play_my_selection, font=SMALL_FONT, fg=FG, bg=BG,
+            activeforeground=FG, activebackground=BG, selectcolor=CARD, cursor='hand2',
+            command=self._sync_report_selection
+        )
+        self.sync_play_my_cb.pack(anchor='w')
+        # Your current selection (always visible, updated when you change file/OS)
+        self.sync_your_selection_label = tk.Label(
+            sync_frame, text='Your selection: (none)', font=SMALL_FONT, fg=SUBTLE, bg=BG,
+            justify='left', wraplength=320
+        )
+        self.sync_your_selection_label.pack(anchor='w', pady=(SMALL_PAD, 0))
+        # Who is playing what (host + clients) when connected
+        self.sync_now_playing_label = tk.Label(
+            sync_frame, text='', font=SMALL_FONT, fg=SUBTLE, bg=BG,
+            justify='left', wraplength=320
+        )
+        self.sync_now_playing_label.pack(anchor='w', pady=(SMALL_PAD, 0))
+        # Refresh "Your selection" when user switches to Play together tab
+        def _on_notebook_tab_changed(_event):
+            try:
+                if self.notebook.index(self.notebook.select()) == 3:  # Play together
+                    self._sync_update_your_selection_label()
+            except (tk.TclError, ValueError):
+                pass
+        self.notebook.bind('<<NotebookTabChanged>>', _on_notebook_tab_changed)
         self._sync_register_room_callbacks()
 
     def _sync_register_room_callbacks(self):
@@ -966,15 +1004,18 @@ class App:
         def on_disconnected():
             log.info("Room callback: disconnected")
             self.root.after(0, self._sync_update_disconnected_ui)
-        def on_play_file(start_in: float, midi_bytes: bytes, tempo: float, transpose: int, host_send_time: float | None = None):
-            self.root.after(0, lambda: self._sync_received_play_file(start_in, midi_bytes, tempo, transpose, host_send_time))
-        def on_play_os(start_in: float, sid: str, tempo: float, transpose: int, host_send_time: float | None = None):
-            self.root.after(0, lambda: self._sync_received_play_os(start_in, sid, tempo, transpose, host_send_time))
+        def on_play_file(start_in: float, midi_bytes: bytes, tempo: float, transpose: int, host_send_time: float | None = None, host_playing_label: str = ''):
+            self.root.after(0, lambda: self._sync_received_play_file(start_in, midi_bytes, tempo, transpose, host_send_time, host_playing_label))
+        def on_play_os(start_in: float, sid: str, tempo: float, transpose: int, host_send_time: float | None = None, host_playing_label: str = ''):
+            self.root.after(0, lambda: self._sync_received_play_os(start_in, sid, tempo, transpose, host_send_time, host_playing_label))
+        def on_room_playing(players: list):
+            self.root.after(0, lambda: self._sync_update_now_playing(players))
         self._room.on_clients_changed = on_clients_changed
         self._room.on_connected = on_connected
         self._room.on_disconnected = on_disconnected
         self._room.on_play_file = on_play_file
         self._room.on_play_os = on_play_os
+        self._room.on_room_playing = on_room_playing
 
     def _open_log(self):
         """Open the log file with the default system application."""
@@ -1110,6 +1151,8 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         port = s.rsplit(':', 1)[-1] if ':' in s else str(DEFAULT_PORT)
         self.sync_host_var.set(f'{addr}:{port}')
         self.sync_host_status.config(text=f'  —  {n} participant(s)')
+        if self._room.is_host():
+            self._sync_report_selection()  # broadcast so new clients see host selection
 
     def _sync_start_host(self):
         s = self.sync_host_var.get().strip()
@@ -1152,6 +1195,8 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         self.sync_join_btn.config(state='disabled')
         self.sync_disconnect_btn.config(state='disabled')  # only for client
         self.sync_status.config(text='You are the host. Select music and press Play — others will follow.')
+        self.sync_play_my_cb.pack_forget()  # hide "play my selection" when host
+        self._sync_report_selection()  # show initial selection (or "(select a song)")
         self._sync_update_host_status(0)
 
     def _sync_stop_host(self):
@@ -1163,7 +1208,9 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         self.sync_join_btn.config(state='normal')
         self.sync_host_status.config(text='')
         self.sync_firewall_hint.pack(anchor='w', pady=(SMALL_PAD, 0))
+        self.sync_play_my_cb.pack(anchor='w')
         self.sync_status.config(text='Not connected.')
+        self._sync_update_now_playing([])
 
     def _sync_join(self):
         # Ask to allow the app through the firewall (private and public) for joining/hosting
@@ -1206,13 +1253,84 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         self.sync_join_btn.config(state='disabled')
         self.sync_disconnect_btn.config(state='normal')
         self.sync_host_btn.config(state='disabled')
+        self.sync_play_my_cb.pack(anchor='w')  # show when client
         self.sync_status.config(text='Connected. Waiting for host to play.')
+        self._sync_report_selection()  # report our selection so host sees us (or "(host's selection)")
 
     def _sync_update_disconnected_ui(self):
         self.sync_join_btn.config(state='normal')
         self.sync_disconnect_btn.config(state='disabled')
         self.sync_host_btn.config(state='normal')
         self.sync_status.config(text='Disconnected.')
+        self._sync_my_reported_label = ''
+        self._sync_update_now_playing([])
+
+    def _sync_update_now_playing(self, players: list):
+        """Update the 'Now playing' label from room_playing list [(who, label), ...]."""
+        self._sync_last_players = list(players)
+        if not players:
+            self.sync_now_playing_label.config(text='')
+            return
+        lines = []
+        if self._room.is_host():
+            for i, (who, label) in enumerate(players):
+                name = 'You' if who == 'host' else f'Client {i}'
+                text = label.strip() or '(select a song)'
+                lines.append(f'{name}: {text}')
+        else:
+            host_label = next((l for w, l in players if w == 'host'), '')
+            lines.append(f"Host: {host_label.strip() or '(select a song)'}")
+            you_label = self._sync_my_reported_label or "(host's selection)"
+            lines.append(f"You: {you_label}")
+        self.sync_now_playing_label.config(text='\n'.join(lines))
+
+    def _get_selected_os(self) -> tuple[str | None, str | None]:
+        """Return (sid, title) for selected OS sequence, or (None, None)."""
+        sel = self.os_listbox.curselection()
+        if not sel or not self.os_sequences:
+            return None, None
+        idx = sel[0]
+        if idx >= len(self.os_sequences):
+            return None, None
+        return self.os_sequences[idx]
+
+    def _get_sync_selection_label(self) -> str:
+        """Return label for current selection (file or OS), or last tab's selection when listbox is empty (e.g. after tab switch)."""
+        path = self.get_selected_file()
+        if path:
+            return os.path.basename(path)
+        sid, title = self._get_selected_os()
+        if sid:
+            return f"OS: {title}" if title else f"OS: {sid}"
+        # Use stored selection from last tab when current listbox has no selection
+        if self._last_tab_visited == 'file' and self._last_file_path:
+            return os.path.basename(self._last_file_path)
+        if self._last_os_sid:
+            return f"OS: {self._last_os_title}" if self._last_os_title else f"OS: {self._last_os_sid}"
+        return ""
+
+    def _sync_update_your_selection_label(self):
+        """Update the 'Your selection:' line in Play together (call when file/OS selection changes)."""
+        label = self._get_sync_selection_label()
+        text = label if label else "(none)"
+        self.sync_your_selection_label.config(text=f"Your selection: {text}")
+
+    def _sync_report_selection(self):
+        """Report current selection to the room so everyone sees it before Play."""
+        if not self._room.is_connected():
+            return
+        if self._room.is_host():
+            label = self._get_sync_selection_label() or "(select a song)"
+            self._room.host_report_playing(label)
+        else:
+            if self.sync_play_my_selection.get():
+                label = self._get_sync_selection_label() or "(select a song)"
+            else:
+                label = "(host's selection)"
+            self._sync_my_reported_label = label
+            self._room.send_report_playing(label)
+            if self._sync_last_players:
+                self._sync_update_now_playing(self._sync_last_players)
 
     def _sync_disconnect(self):
         if not self._room.is_client():
@@ -1224,24 +1342,32 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         self.sync_host_btn.config(state='normal')
         self.sync_status.config(text='Disconnected.')
 
-    def _sync_received_play_file(self, start_in_sec: float, midi_bytes: bytes, tempo: float, transpose: int, host_send_time: float | None = None):
-        """Client received play_file: write temp file, schedule playback at host_send_time + start_in_sec for better sync."""
+    def _sync_received_play_file(self, start_in_sec: float, midi_bytes: bytes, tempo: float, transpose: int, host_send_time: float | None = None, host_playing_label: str = ''):
+        """Client received play_file: play host's file or own selection at same time; report what we're playing."""
         log.info("Client received play_file (start_in=%.1fs, %s bytes)", start_in_sec, len(midi_bytes))
         if not playback.KEYBOARD_AVAILABLE:
             return
-        try:
-            f = tempfile.NamedTemporaryFile(suffix='.mid', delete=False)
-            f.write(midi_bytes)
-            f.close()
-            path = f.name
-            self._sync_temp_paths.append(path)
-        except OSError:
-            return
-        # Use host timestamp so we start at same moment as host (if clocks are roughly aligned)
+        path = self.get_selected_file() or self._last_file_path
+        use_my = self._room.is_client() and self.sync_play_my_selection.get() and path
+        if use_my:
+            my_label = os.path.basename(path)
+        else:
+            try:
+                f = tempfile.NamedTemporaryFile(suffix='.mid', delete=False)
+                f.write(midi_bytes)
+                f.close()
+                path = f.name
+                self._sync_temp_paths.append(path)
+            except OSError:
+                return
+            my_label = host_playing_label.strip() or "host's selection"
         if host_send_time is not None and isinstance(host_send_time, (int, float)):
             start_at = float(host_send_time) + start_in_sec
         else:
             start_at = time.time() + start_in_sec
+        self._sync_my_reported_label = my_label
+        self._room.send_report_playing(my_label)
+
         def wait_then_play():
             delay = start_at - time.time()
             if delay > 0:
@@ -1269,21 +1395,37 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
             daemon=True
         ).start()
 
-    def _sync_received_play_os(self, start_in_sec: float, sid: str, tempo: float, transpose: int, host_send_time: float | None = None):
-        """Client received play_os: download then schedule playback at host_send_time + start_in_sec for better sync."""
+    def _sync_received_play_os(self, start_in_sec: float, sid: str, tempo: float, transpose: int, host_send_time: float | None = None, host_playing_label: str = ''):
+        """Client received play_os: play host's OS or own selection at same time; report what we're playing."""
         log.info("Client received play_os sid=%s (start_in=%.1fs)", sid, start_in_sec)
         if not playback.KEYBOARD_AVAILABLE:
             return
+        use_my = self._room.is_client() and self.sync_play_my_selection.get()
+        my_sid, my_title = self._get_selected_os() if use_my else (None, None)
+        if use_my and not my_sid:
+            my_sid, my_title = self._last_os_sid, self._last_os_title
+        use_my = use_my and bool(my_sid)
         if host_send_time is not None and isinstance(host_send_time, (int, float)):
             start_at = float(host_send_time) + start_in_sec
         else:
             start_at = time.time() + start_in_sec
+        my_label = f"OS: {my_title}" if (use_my and my_title) else (f"OS: {my_sid}" if use_my else (host_playing_label.strip() or "host's selection"))
+        self._sync_my_reported_label = my_label
+        self._room.send_report_playing(my_label)
+
         def download_and_schedule():
-            try:
-                path = download_sequence_midi(sid, bpm=110, timeout=20)
-            except Exception:
-                self.root.after(0, lambda: self.sync_status.config(text='Download failed.'))
-                return
+            if use_my:
+                try:
+                    path = download_sequence_midi(my_sid, bpm=110, timeout=20)
+                except Exception:
+                    self.root.after(0, lambda: self.sync_status.config(text='Download failed.'))
+                    return
+            else:
+                try:
+                    path = download_sequence_midi(sid, bpm=110, timeout=20)
+                except Exception:
+                    self.root.after(0, lambda: self.sync_status.config(text='Download failed.'))
+                    return
             delay = start_at - time.time()
             if delay > 0:
                 time.sleep(delay)
@@ -1369,6 +1511,7 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         if self._os_favorites.list_all():
             msg += f'  ★ {len(self._os_favorites.list_all())} favorites at top.'
         self.os_status.config(text=msg)
+        self._sync_update_your_selection_label()
 
     def _open_selected_sequence(self):
         sel = self.os_listbox.curselection()
@@ -1466,8 +1609,11 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
     def _on_os_downloaded_for_play(self, path: str, sid: str, tempo: float, transpose: int):
         """Called on main thread when OS MIDI is downloaded. If host, broadcast and sync start; else start now."""
         if self._room.is_host():
+            title = next((t for s, t in self.os_sequences if s == sid), None)
+            host_label = f"OS: {title}" if title else f"OS: {sid}"
             log.info("Host sending play_os sid=%s (synced)", sid)
-            self._room.send_play_os(START_DELAY_SEC, sid, tempo, transpose)
+            self._room.send_play_os(START_DELAY_SEC, sid, tempo, transpose, host_playing_label=host_label)
+            self._room.host_report_playing(host_label)
             start_at = time.time() + START_DELAY_SEC
             def wait_then_play():
                 delay = start_at - time.time()
@@ -1565,8 +1711,13 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
             if names:
                 self.file_listbox.selection_set(0)
                 self.file_listbox.see(0)
+                self._last_file_path = os.path.join(folder, names[0])
+                self._last_tab_visited = 'file'
+            else:
+                self._last_file_path = None
         except OSError as e:
             messagebox.showerror('Error', str(e))
+        self._sync_update_your_selection_label()
 
     def get_selected_file(self):
         if not self.folder_path:
@@ -1788,11 +1939,24 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         key = self._get_file_song_key()
         self._apply_song_settings_for_key(key)
         self.save_file_var.set(self._song_settings.has(key) if key else False)
+        path = self.get_selected_file()
+        if path is not None:
+            self._last_file_path = path
+            self._last_tab_visited = 'file'
+        self._sync_update_your_selection_label()
+        self._sync_report_selection()
 
     def _on_os_selection_changed(self):
         key = self._get_os_song_key()
         self._apply_song_settings_for_key(key)
         self.save_os_var.set(self._song_settings.has(key) if key else False)
+        sid, title = self._get_selected_os()
+        if sid is not None:
+            self._last_os_sid = sid
+            self._last_os_title = title
+            self._last_tab_visited = 'os'
+        self._sync_update_your_selection_label()
+        self._sync_report_selection()
 
     def play(self):
         if not playback.KEYBOARD_AVAILABLE:
@@ -1817,8 +1981,10 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
                 return
             tempo = self.tempo.get()
             transpose = self.transpose.get()
+            host_label = os.path.basename(path)
             log.info("Host sending play_file (synced, %s bytes)", len(midi_bytes))
-            self._room.send_play_file(START_DELAY_SEC, midi_bytes, tempo, transpose)
+            self._room.send_play_file(START_DELAY_SEC, midi_bytes, tempo, transpose, host_playing_label=host_label)
+            self._room.host_report_playing(host_label)
             start_at = time.time() + START_DELAY_SEC
             def wait_then_play():
                 delay = start_at - time.time()

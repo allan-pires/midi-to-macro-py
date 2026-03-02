@@ -42,11 +42,15 @@ class Room:
         self._lock = threading.Lock()
         self._running = False
 
-        self.on_play_file: Callable[[float, bytes, float, int, float | None], None] | None = None
-        self.on_play_os: Callable[[float, str, float, int, float | None], None] | None = None
+        self.on_play_file: Callable[..., None] | None = None
+        self.on_play_os: Callable[..., None] | None = None
         self.on_clients_changed: Callable[[int], None] | None = None
         self.on_connected: Callable[[], None] | None = None
         self.on_disconnected: Callable[[], None] | None = None
+        self.on_room_playing: Callable[[list[tuple[str, str]]], None] | None = None  # [(who, label), ...]
+
+        self._host_playing_label = ""
+        self._client_labels: dict[int, str] = {}  # id(client) -> label
 
     def is_host(self) -> bool:
         return self._host_socket is not None
@@ -99,15 +103,32 @@ class Room:
             threading.Thread(target=self._serve_client, args=(client,), daemon=True).start()
 
     def _serve_client(self, client: socket.socket):
+        buf = b''
         try:
             client.settimeout(300.0)
             while self._running:
                 data = client.recv(4096)
                 if not data:
                     break
+                buf += data
+                while b'\n' in buf:
+                    line, buf = buf.split(b'\n', 1)
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        msg = json.loads(line.decode('utf-8'))
+                        if msg.get('cmd') == 'report_playing':
+                            label = str(msg.get('label', ''))[:200]
+                            self._client_labels[id(client)] = label
+                            self._broadcast_room_playing()
+                    except (json.JSONDecodeError, UnicodeDecodeError, KeyError):
+                        pass
         except (OSError, ConnectionResetError) as e:
             log.debug("Client connection closed: %s", e)
         finally:
+            self._client_labels.pop(id(client), None)
+            self._broadcast_room_playing()
             with self._lock:
                 if client in self._clients:
                     self._clients.remove(client)
@@ -119,9 +140,31 @@ class Room:
             if self.on_clients_changed:
                 self.on_clients_changed(self.client_count())
 
+    def _broadcast_room_playing(self):
+        """Build players list and send to all clients; notify host UI via callback."""
+        players = [('host', self._host_playing_label)]
+        with self._lock:
+            for c in self._clients:
+                players.append(('client', self._client_labels.get(id(c), '')))
+        payload = {'cmd': 'room_playing', 'players': players}
+        line = (json.dumps(payload) + '\n').encode('utf-8')
+        with self._lock:
+            dead = []
+            for c in self._clients:
+                try:
+                    c.sendall(line)
+                except OSError:
+                    dead.append(c)
+            for c in dead:
+                self._clients.remove(c)
+        if self.on_room_playing:
+            self.on_room_playing(players)
+
     def stop_host(self):
         log.info("Stop host")
         self._running = False
+        self._host_playing_label = ""
+        self._client_labels.clear()
         with self._lock:
             for c in self._clients:
                 try:
@@ -194,6 +237,7 @@ class Room:
     def _handle_message(self, msg: dict):
         cmd = msg.get('cmd')
         host_send_time = msg.get('host_send_time')  # host's time.time() when sending; clients use for sync
+        host_playing_label = str(msg.get('host_playing_label', ''))
         if cmd == 'play_file' and self.on_play_file:
             try:
                 start_in = float(msg.get('start_in_sec', START_DELAY_SEC))
@@ -201,7 +245,7 @@ class Room:
                 midi_bytes = base64.b64decode(b64)
                 tempo = float(msg.get('tempo', 1.0))
                 transpose = int(msg.get('transpose', 0))
-                self.on_play_file(start_in, midi_bytes, tempo, transpose, host_send_time)
+                self.on_play_file(start_in, midi_bytes, tempo, transpose, host_send_time, host_playing_label)
             except (TypeError, ValueError):
                 pass
         elif cmd == 'play_os' and self.on_play_os:
@@ -210,7 +254,13 @@ class Room:
                 sid = str(msg.get('sid', ''))
                 tempo = float(msg.get('tempo', 1.0))
                 transpose = int(msg.get('transpose', 0))
-                self.on_play_os(start_in, sid, tempo, transpose, host_send_time)
+                self.on_play_os(start_in, sid, tempo, transpose, host_send_time, host_playing_label)
+            except (TypeError, ValueError):
+                pass
+        elif cmd == 'room_playing' and self.on_room_playing:
+            try:
+                players = list(msg.get('players', []))
+                self.on_room_playing([(str(w), str(l)) for w, l in players])
             except (TypeError, ValueError):
                 pass
 
@@ -231,7 +281,25 @@ class Room:
         if self.on_disconnected:
             self.on_disconnected()
 
-    def send_play_file(self, start_in_sec: float, midi_bytes: bytes, tempo: float, transpose: int):
+    def send_report_playing(self, label: str):
+        """Client only: tell host what we're playing (for room_playing display)."""
+        if not self.is_client() or not self._client_socket:
+            return
+        payload = {'cmd': 'report_playing', 'label': label[:200]}
+        line = (json.dumps(payload) + '\n').encode('utf-8')
+        try:
+            self._client_socket.sendall(line)
+        except OSError:
+            pass
+
+    def host_report_playing(self, label: str):
+        """Host only: set host's playing label and broadcast room_playing to all clients."""
+        if not self.is_host():
+            return
+        self._host_playing_label = label[:200]
+        self._broadcast_room_playing()
+
+    def send_play_file(self, start_in_sec: float, midi_bytes: bytes, tempo: float, transpose: int, host_playing_label: str = ''):
         """Host only: broadcast play file to all clients."""
         if not self.is_host():
             return
@@ -243,6 +311,7 @@ class Room:
             'midi_base64': base64.b64encode(midi_bytes).decode('ascii'),
             'tempo': tempo,
             'transpose': transpose,
+            'host_playing_label': host_playing_label,
         }
         line = (json.dumps(payload) + '\n').encode('utf-8')
         with self._lock:
@@ -257,7 +326,7 @@ class Room:
         if dead and self.on_clients_changed:
             self.on_clients_changed(self.client_count())
 
-    def send_play_os(self, start_in_sec: float, sid: str, tempo: float, transpose: int):
+    def send_play_os(self, start_in_sec: float, sid: str, tempo: float, transpose: int, host_playing_label: str = ''):
         """Host only: broadcast play OS sequence to all clients."""
         if not self.is_host():
             return
@@ -269,6 +338,7 @@ class Room:
             'sid': sid,
             'tempo': tempo,
             'transpose': transpose,
+            'host_playing_label': host_playing_label,
         }
         line = (json.dumps(payload) + '\n').encode('utf-8')
         with self._lock:
