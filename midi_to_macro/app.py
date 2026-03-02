@@ -23,6 +23,7 @@ from midi_to_macro.os_favorites import OsFavorites
 from midi_to_macro.playlist import Playlist
 from midi_to_macro.song_settings import SongSettings
 from midi_to_macro.sync import DEFAULT_PORT, Room, START_DELAY_SEC, get_lan_ip
+from midi_to_macro.firewall import add_firewall_rules
 from midi_to_macro.updater import check_for_updates, download_update, is_newer, open_release_page
 from midi_to_macro.version import __version__ as APP_VERSION
 from midi_to_macro.window_focus import focus_process_window
@@ -1020,6 +1021,19 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         self.sync_status.config(text='Not connected.')
 
     def _sync_join(self):
+        # Ask to allow the app through the firewall (private and public) for joining/hosting
+        if messagebox.askyesno(
+            "Firewall",
+            "Allow Where Songs Meet through Windows Firewall for private and public networks?\n\n"
+            "This helps when joining or hosting rooms.",
+            icon="question",
+        ):
+            ok, msg = add_firewall_rules()
+            if not ok:
+                messagebox.showwarning("Firewall", f"Could not add firewall rules: {msg}")
+            else:
+                self.sync_status.config(text=msg)
+
         s = self.sync_join_var.get().strip()
         if ':' not in s:
             messagebox.showwarning('Invalid address', 'Enter host:port (e.g. 192.168.1.10:38472)')
