@@ -30,6 +30,7 @@ from midi_to_macro.firewall import add_firewall_rules
 from midi_to_macro.updater import check_for_updates, download_update, is_newer, open_release_page
 from midi_to_macro.version import __version__ as APP_VERSION
 from midi_to_macro.window_focus import focus_process_window
+from midi_to_macro import log_config as _log_config
 from midi_to_macro import theme as _theme
 
 _t = _theme
@@ -72,6 +73,7 @@ ICON_STOP = _t.ICON_STOP
 ICON_STOP_HOST = _t.ICON_STOP_HOST
 ICON_BTN_WIDTH = _t.ICON_BTN_WIDTH
 ICON_UPDATE = _t.ICON_UPDATE
+ICON_LOG = _t.ICON_LOG
 LISTBOX_MIN_ROWS = _t.LISTBOX_MIN_ROWS
 OS_LISTBOX_MIN_ROWS = _t.OS_LISTBOX_MIN_ROWS
 PAD = _t.PAD
@@ -298,7 +300,7 @@ class App:
                 'HOST': ICON_HOST, 'PLAY': ICON_PLAY, 'RELOAD': ICON_RELOAD,
                 'REMOVE': ICON_REMOVE, 'SAVE': ICON_SAVE, 'SEARCH': ICON_SEARCH,
             'STOP': ICON_STOP, 'STOP_HOST': ICON_STOP_HOST,
-            'UPDATE': ICON_UPDATE,
+            'UPDATE': ICON_UPDATE, 'LOG': ICON_LOG,
         }
             base = dict(
                 bg=CARD, fg=FG, activebackground=CARD, activeforeground=FG,
@@ -335,6 +337,11 @@ class App:
         tk.Label(header, text=f'  v{APP_VERSION}', font=SMALL_FONT, fg=SUBTLE, bg=BG).pack(side='left', anchor='w')
         header_btns = tk.Frame(header, bg=BG)
         header_btns.pack(side='right')
+        self._log_btn = tk.Button(
+            header_btns, command=self._open_log,
+            **_icon_btn_kwargs('LOG', bg=BG, activebackground=BG)
+        )
+        self._log_btn.pack(side='right')
         self._update_btn = tk.Button(
             header_btns, command=self._check_for_updates,
             **_icon_btn_kwargs('UPDATE', bg=BG, activebackground=BG)
@@ -506,6 +513,7 @@ class App:
         )
         self.status.pack(anchor='w')
         _tooltip(open_folder_btn, self.status, 'Open folder')
+        _tooltip(self._log_btn, self.status, 'Open log file')
         _tooltip(self._update_btn, self.status, 'Check for updates')
         _tooltip(add_to_playlist_file_btn, self.status, 'Add to playlist')
         _tooltip(save_file_cb, self.status, 'Save tempo/transpose for this song')
@@ -967,6 +975,20 @@ class App:
         self._room.on_disconnected = on_disconnected
         self._room.on_play_file = on_play_file
         self._room.on_play_os = on_play_os
+
+    def _open_log(self):
+        """Open the log file with the default system application."""
+        path = getattr(_log_config, 'LOG_FILE_PATH', None)
+        if not path or not os.path.isfile(path):
+            messagebox.showinfo('Log', 'Log file is not available.')
+            return
+        try:
+            if os.name == 'nt':
+                os.startfile(path)
+            else:
+                subprocess.run(['xdg-open', path], check=False)
+        except OSError as e:
+            messagebox.showerror('Log', f'Could not open log: {e}')
 
     def _check_for_updates(self):
         """Run update check in a background thread and show result on main thread."""
