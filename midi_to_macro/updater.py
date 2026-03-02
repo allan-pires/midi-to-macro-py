@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import ssl
 import tempfile
 import urllib.error
 import urllib.request
@@ -36,8 +37,20 @@ class _RedirectHandler(urllib.request.HTTPRedirectHandler):
         return new_req
 
 
+def _ssl_context():
+    """SSL context with CA bundle so HTTPS works in frozen builds and strict environments."""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return ssl.create_default_context()
+
+
 def _build_download_opener():
-    return urllib.request.build_opener(_RedirectHandler)
+    return urllib.request.build_opener(
+        _RedirectHandler,
+        urllib.request.HTTPSHandler(context=_ssl_context()),
+    )
 
 
 def _parse_version(s: str) -> tuple[int, ...]:
@@ -60,7 +73,7 @@ def check_for_updates(timeout: float = 10.0) -> tuple[str | None, str | None, st
                 "User-Agent": "midi-to-macro-updater",
             },
         )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout, context=_ssl_context()) as resp:
             data = resp.read().decode("utf-8")
     except urllib.error.HTTPError as e:
         if e.code == 404:

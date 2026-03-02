@@ -29,6 +29,7 @@ def main():
     hidden = [
         "--hidden-import", "midi_to_macro.theme",
         "--hidden-import", "midi_to_macro.icon_images",
+        "--hidden-import", "certifi",
     ]
 
     cmd = (

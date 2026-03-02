@@ -2,10 +2,13 @@
 
 import base64
 import json
+import logging
 import socket
 import threading
 import time
 from typing import Callable
+
+log = logging.getLogger("midi_to_macro.sync")
 
 DEFAULT_PORT = 38472
 START_DELAY_SEC = 3.0  # longer delay so clients have time to receive and clocks align better
@@ -61,6 +64,7 @@ class Room:
     def start_host(self, port: int = DEFAULT_PORT) -> int:
         """Start hosting on port. Returns actual port or 0 on failure."""
         if self.is_connected():
+            log.warning("start_host: already connected")
             return 0
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -69,12 +73,14 @@ class Room:
             sock.listen(4)
             if port == 0:
                 port = sock.getsockname()[1]
-        except OSError:
+        except OSError as e:
+            log.warning("start_host bind failed port=%s: %s", port, e)
             return 0
         self._host_socket = sock
         self._running = True
         self._host_thread = threading.Thread(target=self._accept_loop, daemon=True)
         self._host_thread.start()
+        log.info("Host listening on port %s", port)
         return port
 
     def _accept_loop(self):
@@ -87,6 +93,7 @@ class Room:
                 continue
             with self._lock:
                 self._clients.append(client)
+            log.info("Client connected (peer %s); total %s", client.getpeername(), len(self._clients))
             if self.on_clients_changed:
                 self.on_clients_changed(self.client_count())
             threading.Thread(target=self._serve_client, args=(client,), daemon=True).start()
@@ -98,12 +105,13 @@ class Room:
                 data = client.recv(4096)
                 if not data:
                     break
-        except (OSError, ConnectionResetError):
-            pass
+        except (OSError, ConnectionResetError) as e:
+            log.debug("Client connection closed: %s", e)
         finally:
             with self._lock:
                 if client in self._clients:
                     self._clients.remove(client)
+                    log.info("Client disconnected; %s participant(s) left", len(self._clients))
             try:
                 client.close()
             except OSError:
@@ -112,6 +120,7 @@ class Room:
                 self.on_clients_changed(self.client_count())
 
     def stop_host(self):
+        log.info("Stop host")
         self._running = False
         with self._lock:
             for c in self._clients:
@@ -132,16 +141,19 @@ class Room:
     def connect(self, host: str, port: int) -> bool:
         """Connect to host. Returns True on success."""
         if self.is_connected():
+            log.warning("connect: already connected")
             return False
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(10.0)
             sock.connect((host, port))
             sock.settimeout(1.0)  # short timeout so recv loop checks _running often
-        except (OSError, socket.gaierror):
+        except (OSError, socket.gaierror) as e:
+            log.warning("connect failed %s:%s: %s", host, port, e)
             return False
         self._client_socket = sock
         self._running = True
+        log.info("Connected to %s:%s", host, port)
         if self.on_connected:
             self.on_connected()
         self._client_thread = threading.Thread(target=self._client_recv_loop, daemon=True)
@@ -153,7 +165,11 @@ class Room:
         assert self._client_socket is not None
         try:
             while self._running and self._client_socket:
-                data = self._client_socket.recv(4096)
+                try:
+                    data = self._client_socket.recv(4096)
+                except socket.timeout:
+                    # Idle: no data from host yet; keep waiting
+                    continue
                 if not data:
                     break
                 buf += data
@@ -167,8 +183,8 @@ class Room:
                         self._handle_message(msg)
                     except (json.JSONDecodeError, UnicodeDecodeError, KeyError):
                         pass
-        except (OSError, ConnectionResetError):
-            pass
+        except (OSError, ConnectionResetError) as e:
+            log.info("Disconnected from host: %s", e)
         finally:
             self._client_socket = None
             self._running = False
@@ -200,6 +216,7 @@ class Room:
 
     def disconnect(self):
         """Leave the room (client only). Wakes the recv thread and updates UI."""
+        log.info("Client disconnecting")
         self._running = False
         if self._client_socket:
             try:

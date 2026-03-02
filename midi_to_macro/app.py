@@ -1,5 +1,6 @@
 """Tkinter GUI application."""
 
+import logging
 import os
 import shutil
 import subprocess
@@ -10,6 +11,8 @@ import time
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from tkinter import ttk
+
+log = logging.getLogger("midi_to_macro.app")
 
 from midi_to_macro import midi, playback
 from midi_to_macro.online_sequencer import (
@@ -830,8 +833,25 @@ class App:
         # ---- Tab 4: Play together ----
         sync_tab = tk.Frame(notebook, bg=BG)
         notebook.add(sync_tab, text='  Play together  ')
-        sync_frame = tk.Frame(sync_tab, bg=BG)
-        sync_frame.pack(fill='both', expand=True, padx=PAD, pady=(0, PAD))
+        # Scrollable area so Join block is not cut off on low resolutions
+        sync_canvas = tk.Canvas(sync_tab, bg=BG, highlightthickness=0)
+        sync_scroll = tk.Scrollbar(sync_tab, orient='vertical', command=sync_canvas.yview)
+        sync_scroll.pack(side='right', fill='y')
+        sync_canvas.pack(side='left', fill='both', expand=True)
+        sync_canvas.configure(yscrollcommand=sync_scroll.set)
+        sync_frame = tk.Frame(sync_canvas, bg=BG)
+        sync_canvas_window = sync_canvas.create_window((0, 0), window=sync_frame, anchor='nw')
+        def _sync_on_frame_configure(e):
+            sync_canvas.configure(scrollregion=sync_canvas.bbox('all'))
+            sync_canvas.itemconfig(sync_canvas_window, width=e.width)
+        sync_frame.bind('<Configure>', _sync_on_frame_configure)
+        def _sync_on_canvas_configure(e):
+            sync_canvas.itemconfig(sync_canvas_window, width=e.width)
+        sync_canvas.bind('<Configure>', _sync_on_canvas_configure)
+        def _sync_mousewheel(e):
+            sync_canvas.yview_scroll(int(-1 * (e.delta / 120)), 'units')
+        sync_canvas.bind('<MouseWheel>', _sync_mousewheel)
+        sync_frame.pack(fill='x', padx=PAD, pady=(0, PAD))
         # Intro
         sync_intro = tk.Label(
             sync_frame,
@@ -930,10 +950,13 @@ class App:
     def _sync_register_room_callbacks(self):
         """Register room callbacks; all run via root.after on main thread."""
         def on_clients_changed(n: int):
+            log.debug("Room participants: %s", n)
             self.root.after(0, lambda: self._sync_update_host_status(n))
         def on_connected():
+            log.info("Room callback: connected")
             self.root.after(0, self._sync_update_joined_ui)
         def on_disconnected():
+            log.info("Room callback: disconnected")
             self.root.after(0, self._sync_update_disconnected_ui)
         def on_play_file(start_in: float, midi_bytes: bytes, tempo: float, transpose: int, host_send_time: float | None = None):
             self.root.after(0, lambda: self._sync_received_play_file(start_in, midi_bytes, tempo, transpose, host_send_time))
@@ -967,6 +990,7 @@ class App:
             self.status.config(text='Ready — focus the game window before playing')
         if latest_version is None:
             msg = error_detail or 'Could not check for updates. Check your connection.'
+            log.warning("Update check failed: %s", msg)
             messagebox.showerror('Update check failed', msg)
             return
         if not is_newer(latest_version):
@@ -1078,10 +1102,27 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         if port <= 0 or port > 65535:
             messagebox.showwarning('Invalid port', 'Port must be between 1 and 65535.')
             return
+        log.info("Starting host on port %s", port)
+        # Host needs firewall rule too so clients can connect inbound
+        if messagebox.askyesno(
+            "Firewall",
+            "Allow Where Songs Meet through Windows Firewall for private and public networks?\n\n"
+            "Required so others can connect to your room.",
+            icon="question",
+        ):
+            ok, msg = add_firewall_rules()
+            if not ok:
+                log.warning("Firewall rules failed: %s", msg)
+                messagebox.showwarning("Firewall", f"Could not add firewall rules: {msg}")
+            else:
+                log.info("Firewall rules added: %s", msg)
+                self.sync_host_status.config(text='  —  ' + msg)
         actual = self._room.start_host(port)
         if actual == 0:
-            messagebox.showerror('Host failed', 'Could not start the room (port in use?).')
+            log.error("Host failed: could not bind port %s (in use or blocked)", port)
+            messagebox.showerror('Host failed', 'Could not start the room (port in use or blocked by firewall?).')
             return
+        log.info("Host started on port %s", actual)
         addr = get_lan_ip()
         self.sync_host_var.set(f'{addr}:{actual}')
         self.sync_host_btn.config(state='disabled')
@@ -1092,13 +1133,14 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         self._sync_update_host_status(0)
 
     def _sync_stop_host(self):
+        log.info("Stopping host")
         self._room.stop_host()
         self.sync_host_var.set(f'{get_lan_ip()}:{DEFAULT_PORT}')
         self.sync_host_btn.config(state='normal')
         self.sync_stop_host_btn.config(state='disabled')
         self.sync_join_btn.config(state='normal')
         self.sync_host_status.config(text='')
-        self.sync_firewall_hint.pack_forget()
+        self.sync_firewall_hint.pack(anchor='w', pady=(SMALL_PAD, 0))
         self.sync_status.config(text='Not connected.')
 
     def _sync_join(self):
@@ -1111,8 +1153,10 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         ):
             ok, msg = add_firewall_rules()
             if not ok:
+                log.warning("Firewall rules failed (join): %s", msg)
                 messagebox.showwarning("Firewall", f"Could not add firewall rules: {msg}")
             else:
+                log.info("Firewall rules added (join): %s", msg)
                 self.sync_status.config(text=msg)
 
         s = self.sync_join_var.get().strip()
@@ -1125,9 +1169,12 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
         except ValueError:
             messagebox.showwarning('Invalid port', 'Enter a number for the port.')
             return
+        log.info("Joining %s:%s", host.strip(), port)
         if not self._room.connect(host.strip(), port):
+            log.warning("Connect failed to %s:%s", host.strip(), port)
             messagebox.showerror('Connect failed', 'Could not connect to the host.')
             return
+        log.info("Connected to host %s:%s", host.strip(), port)
         self.sync_join_btn.config(state='disabled')
         self.sync_disconnect_btn.config(state='normal')
         self.sync_host_btn.config(state='disabled')
@@ -1148,6 +1195,7 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
     def _sync_disconnect(self):
         if not self._room.is_client():
             return
+        log.info("Disconnecting from room")
         self._room.disconnect()
         self.sync_join_btn.config(state='normal')
         self.sync_disconnect_btn.config(state='disabled')
@@ -1156,6 +1204,7 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
 
     def _sync_received_play_file(self, start_in_sec: float, midi_bytes: bytes, tempo: float, transpose: int, host_send_time: float | None = None):
         """Client received play_file: write temp file, schedule playback at host_send_time + start_in_sec for better sync."""
+        log.info("Client received play_file (start_in=%.1fs, %s bytes)", start_in_sec, len(midi_bytes))
         if not playback.KEYBOARD_AVAILABLE:
             return
         try:
@@ -1200,6 +1249,7 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
 
     def _sync_received_play_os(self, start_in_sec: float, sid: str, tempo: float, transpose: int, host_send_time: float | None = None):
         """Client received play_os: download then schedule playback at host_send_time + start_in_sec for better sync."""
+        log.info("Client received play_os sid=%s (start_in=%.1fs)", sid, start_in_sec)
         if not playback.KEYBOARD_AVAILABLE:
             return
         if host_send_time is not None and isinstance(host_send_time, (int, float)):
@@ -1394,6 +1444,7 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
     def _on_os_downloaded_for_play(self, path: str, sid: str, tempo: float, transpose: int):
         """Called on main thread when OS MIDI is downloaded. If host, broadcast and sync start; else start now."""
         if self._room.is_host():
+            log.info("Host sending play_os sid=%s (synced)", sid)
             self._room.send_play_os(START_DELAY_SEC, sid, tempo, transpose)
             start_at = time.time() + START_DELAY_SEC
             def wait_then_play():
@@ -1744,6 +1795,7 @@ start /b "" cmd /c "timeout /t 1 >nul & del \"%ME%\""
                 return
             tempo = self.tempo.get()
             transpose = self.transpose.get()
+            log.info("Host sending play_file (synced, %s bytes)", len(midi_bytes))
             self._room.send_play_file(START_DELAY_SEC, midi_bytes, tempo, transpose)
             start_at = time.time() + START_DELAY_SEC
             def wait_then_play():
